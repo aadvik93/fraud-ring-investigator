@@ -1,5 +1,7 @@
 # Fraud Ring Investigator 🕵️
 
+[![CI](https://github.com/aadvik93/fraud-ring-investigator/actions/workflows/ci.yml/badge.svg)](https://github.com/aadvik93/fraud-ring-investigator/actions/workflows/ci.yml)
+
 > **Track 01: Agents That Act on Connected Data**
 > Graph Hacks: Context for AI Agents (WeMakeDevs × FalkorDB), Oct 2026
 
@@ -24,6 +26,11 @@ The workbench includes live graph metrics, node search with focus/contrast, a on
 All data is synthetic. The planted patterns make the demo reproducible as a walkthrough, not a claim of production-grade fraud detection.
 
 The default mode (**No-LLM**) runs a deterministic pipeline over the same tools, so the demo works without any API key. An LLM mode (Claude or Gemini via API key) is implemented but is optional and lightly tested.
+
+## Project write-up
+
+- [DEV: Tracing Fraud Rings with a Graph — What I Learned Building with FalkorDB](https://dev.to/aadvik_krishna_2d1baa4c0a/tracing-fraud-rings-with-a-graph-what-i-learned-building-with-falkordb-4p2h)
+- [Medium: Tracing Fraud Rings with a Graph — What I Learned Building with FalkorDB](https://medium.com/@aadvik183a/tracing-fraud-rings-with-a-graph-what-i-learned-building-with-falkordb-abf1adff95e1)
 
 ## Architecture
 ```mermaid
