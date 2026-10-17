@@ -554,16 +554,21 @@ function renderAlerts(alerts) {
       <div class="alert-amount">$${parseFloat(alert.amount).toLocaleString('en-US', {minimumFractionDigits:2})}</div>
       <div class="alert-from-to">📤 ${escapeHtml(alert.from_acc)} → ${escapeHtml(alert.to_acc)}</div>
       <div class="alert-reason">${escapeHtml(alert.reason)}</div>
-      <select class="mode-select" id="mode-${alert.id}">
+      <select class="mode-select" id="mode-${escapeHtml(alert.id)}">
         <option value="auto">🤖 Auto (LLM if available)</option>
         <option value="nollm" selected>⚙️ No-LLM (deterministic)</option>
         <option value="claude">🧠 Claude</option>
         <option value="gemini">✨ Gemini</option>
       </select>
-      <button class="btn-investigate" onclick="investigate('${alert.id}')" id="btn-${alert.id}">
+      <button class="btn-investigate" id="btn-${escapeHtml(alert.id)}">
         🔍 Investigate
       </button>
     `;
+    const investigateButton = card.querySelector('.btn-investigate');
+    investigateButton.addEventListener('click', (event) => {
+      event.stopPropagation();
+      investigate(alert.id);
+    });
     card.onclick = (e) => {
       if (e.target.tagName === 'BUTTON' || e.target.tagName === 'SELECT') return;
       selectAlert(alert, card);
