@@ -14,6 +14,8 @@ FalkorDB is central: every investigation step is a graph query or a native graph
 4. The deterministic demo records the response actions in FalkorDB: account freeze state and a `Case` node linked to investigated accounts.
 5. Inspect the final report and the Cypher evidence used to support its findings.
 
+The workbench includes live graph metrics, node search with focus/contrast, a one-click fit-to-graph control, an infrastructure-edge toggle, and responsive layouts for narrower screens. Alert and report values are escaped before being inserted into the UI.
+
 ### Demo walkthrough
 - Start with **ALERT_003** to see the fan-out hub pattern and multiple mule recipients.
 - Try **ALERT_002** to inspect a circular transfer pattern.
@@ -101,7 +103,7 @@ Optional LLM mode: copy `.env.example` to `.env` and add `ANTHROPIC_API_KEY` or 
 ```bash
 python3 -m pytest -q     # requires FalkorDB running and the graph seeded
 ```
-The current suite contains 43 tests covering the six graph tools, the graph data endpoint, and the no-LLM investigation. Run the suite against the same FalkorDB version used for the demo; graph algorithm support can vary by server version.
+The current suite covers the six graph tools, graph data, API input validation, and the no-LLM investigation. Run the suite against the same FalkorDB version used for the demo; graph algorithm support can vary by server version.
 
 ## MCP server
 `mcp_server.py` exposes the same six tools (`linked_accounts`, `trace_path`, `find_circular_flows`, `rank_hubs`, `find_communities`, `take_action`) through the Model Context Protocol. It is implemented but not covered by the automated tests.
@@ -123,7 +125,7 @@ tools.py           FalkorDB Cypher queries, graph algorithms, and graph actions
 seed.py            Synthetic graph and three planted fraud patterns
 mcp_server.py      MCP exposure for the graph tools
 static/index.html  Single-page investigation workbench
- tests/            Automated tool, API, and agent tests
+tests/             Automated tool, API, and agent tests
 Dockerfile         Container image definition
 docker-compose.yml Local app + FalkorDB orchestration
 render.yaml        Optional Render deployment configuration
