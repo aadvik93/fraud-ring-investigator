@@ -16,10 +16,11 @@ from falkordb import FalkorDB
 
 FALKORDB_HOST = os.getenv("FALKORDB_HOST", "localhost")
 FALKORDB_PORT = int(os.getenv("FALKORDB_PORT", 6379))
+FALKORDB_PASSWORD = os.getenv("FALKORDB_PASSWORD") or None
 GRAPH_NAME = "fraud_graph"
 
 def get_db():
-    db = FalkorDB(host=FALKORDB_HOST, port=FALKORDB_PORT)
+    db = FalkorDB(host=FALKORDB_HOST, port=FALKORDB_PORT, password=FALKORDB_PASSWORD)
     return db.select_graph(GRAPH_NAME)
 
 def clear_graph(g):
