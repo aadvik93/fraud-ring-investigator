@@ -84,6 +84,21 @@ ORDER BY degree DESC, score DESC
 
 **Actions written back to the graph:** `SET a.frozen = true` and `CREATE (c:Case)` with `(a)-[:FLAGGED_IN]->(c)`.
 
+## Explainable evidence score and action policy
+
+The deterministic workflow calculates a **0–100 heuristic evidence score** from returned graph evidence. It is intentionally not described as a fraud probability or a trained model.
+
+| Observed graph signal | Points |
+|---|---:|
+| Accounts share a device | 20 |
+| Accounts share an IP address | 20 |
+| Accounts share a merchant | 10 |
+| Circular transfer flow found | 35 |
+| A ring account has transfer degree of at least 4 | 15 |
+| Shortest transfer path has at least 2 hops | 10 |
+
+The total is capped at 100. A score of **25 or more** triggers the demo's freeze-and-open-case action; a lower score opens a review case without an automatic freeze. Every report lists the factors that contributed to the score and the action decision. This is a transparent hackathon triage heuristic, not a calibrated real-world risk model; thresholds should be evaluated against labeled data and real operations before any production use.
+
 ## Why a graph
 Finding rings through shared devices and IPs, tracing multi-hop money paths, and detecting cycles are all pattern problems over relationships. In a relational database each of these typically needs several self-joins or recursive queries; here they are short Cypher patterns plus built-in algorithms (PageRank, WCC, shortestPath).
 
