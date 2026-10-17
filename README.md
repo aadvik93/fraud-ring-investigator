@@ -121,7 +121,7 @@ The current suite covers the six graph tools, graph data, API input validation, 
 - Data is synthetic and small (about 34 accounts); this is a demo, not a production system.
 
 ## AI tools disclosure
-This project was built with AI assistance: **Antigravity (Google Gemini models)** generated the initial scaffold and most files, and **Claude (Anthropic)** helped with planning, debugging, and fixing the graph queries and tests. The author ran, tested, and fixed the project, and is responsible for it.
+This project was built with AI assistance: **Antigravity (Google Gemini models)** generated the initial scaffold and most files; **Claude (Anthropic)** helped with planning, debugging, and fixing graph queries and tests; and **ChatGPT (OpenAI, GPT-6)** assisted with the final reliability, UI, and documentation improvements. The author remains responsible for understanding, reviewing, testing, and presenting the submitted project.
 
 ## Project structure
 
