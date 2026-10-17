@@ -36,7 +36,23 @@
     html, body { height: 100%; background: var(--bg-0); color: var(--text); font-family: 'Inter', -apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif; font-size: 14px; }
 
     /* ── Layout ──────────────────────────────────────────────────────────── */
-    .app { display: grid; grid-template-columns: 300px 1fr 380px; grid-template-rows: 56px 1fr; height: 100vh; gap: 0; }
+    .app { display: grid; grid-template-columns: 300px minmax(0, 1fr) 380px; grid-template-rows: 56px auto minmax(0, 1fr); height: 100vh; gap: 0; }
+    .overview { grid-column: 1 / -1; display: grid; grid-template-columns: repeat(4, minmax(0, 1fr)); gap: 10px; padding: 10px 16px; background: var(--bg-0); border-bottom: 1px solid var(--border); }
+    .metric-card { display:flex; align-items:center; gap:12px; min-width:0; padding:10px 14px; border:1px solid var(--border); border-radius:10px; background:linear-gradient(135deg,var(--bg-1),var(--bg-2)); }
+    .metric-icon { display:grid; place-items:center; width:34px; height:34px; flex:0 0 34px; border-radius:9px; background:rgba(79,142,247,.12); color:var(--accent); font-size:17px; }
+    .metric-label { color:var(--muted); font-size:10px; text-transform:uppercase; letter-spacing:.8px; font-weight:700; }
+    .metric-value { margin-top:3px; font-size:20px; line-height:1.1; font-weight:750; font-variant-numeric:tabular-nums; }
+    .metric-note { color:var(--text-dim); font-size:10px; margin-top:3px; }
+    .graph-search { width:145px; min-width:100px; padding:7px 10px; border:1px solid var(--border); border-radius:6px; outline:none; background:var(--bg-2); color:var(--text); font-size:11px; }
+    .graph-search:focus { border-color:var(--accent); box-shadow:0 0 0 2px rgba(79,142,247,.12); }
+    .graph-control { padding:7px 9px; border:1px solid var(--border); border-radius:6px; background:var(--bg-2); color:var(--text-dim); font-size:11px; cursor:pointer; white-space:nowrap; }
+    .graph-control:hover,.graph-control.active { border-color:var(--accent); color:var(--accent); }
+    .node.search-muted { opacity:.14; }
+    .node.search-match { border-color:#fff; border-width:4px; }
+    .edge.search-muted { opacity:.06; }
+    .edge.infra-hidden { display:none; }
+    .status-line { display:flex; align-items:center; gap:7px; color:var(--text-dim); font-size:11px; }
+    .status-dot { width:7px; height:7px; border-radius:50%; background:var(--success); box-shadow:0 0 0 3px rgba(34,197,94,.12); }
 
     /* Header */
     .header { grid-column: 1 / -1; display: flex; align-items: center; gap: 16px; padding: 0 20px; background: var(--bg-1); border-bottom: 1px solid var(--border); z-index: 10; }
@@ -162,6 +178,36 @@
     .notif.success { border-color: rgba(34,197,94,0.4); }
     .notif.error { border-color: rgba(239,68,68,0.4); }
     @keyframes slideIn { from { opacity: 0; transform: translateY(10px); } to { opacity: 1; transform: translateY(0); } }
+    @media (max-width: 1200px) {
+      .app { grid-template-columns: 260px minmax(0,1fr) 320px; }
+      .legend { gap:7px; flex-wrap:wrap; justify-content:flex-end; }
+      .legend-item { font-size:10px; }
+      .graph-search { width:115px; }
+    }
+    @media (max-width: 900px) {
+      html, body { height:auto; min-height:100%; }
+      .app { height:auto; min-height:100vh; grid-template-columns:minmax(0,1fr); grid-template-rows:auto auto auto minmax(520px,65vh) minmax(360px,55vh); }
+      .header { flex-wrap:wrap; padding:10px 14px; min-height:56px; }
+      .header-right { width:100%; margin-left:0; flex-wrap:wrap; }
+      .overview { grid-template-columns:repeat(2,minmax(0,1fr)); padding:10px; }
+      .panel-left { max-height:none; border-right:0; border-bottom:1px solid var(--border); }
+      .alert-list { display:grid; grid-template-columns:repeat(auto-fit,minmax(230px,1fr)); }
+      .panel-center { min-height:520px; }
+      .graph-toolbar { flex-wrap:wrap; }
+      .graph-toolbar-spacer { display:none; }
+      .legend { width:100%; justify-content:flex-start; }
+      .panel-right { min-height:360px; border-left:0; border-top:1px solid var(--border); }
+    }
+    @media (max-width: 480px) {
+      .overview { gap:7px; }
+      .metric-card { padding:9px; gap:8px; }
+      .metric-icon { width:28px; height:28px; flex-basis:28px; font-size:14px; }
+      .metric-value { font-size:17px; }
+      .metric-label { font-size:9px; }
+      .header-right .btn { flex:1; }
+      .graph-search { flex:1; width:100%; }
+      .graph-control { flex:1; }
+    }
   </style>
 </head>
 <body>
@@ -180,9 +226,18 @@
       <span class="badge badge-falkor">FalkorDB</span>
       <span class="badge badge-wcc">PageRank + WCC</span>
       <button class="btn btn-ghost" onclick="loadGraph()">↺ Refresh Graph</button>
+      <span class="status-line" title="Graph API status"><span class="status-dot"></span><span id="connectionStatus">Connecting…</span></span>
+      <button class="btn btn-ghost" onclick="loadGraph()">↺ Refresh Graph</button>
       <button class="btn btn-danger" onclick="resetGraph()" id="resetBtn">⚠ Reset Demo</button>
     </div>
   </header>
+
+  <section class="overview" aria-label="Graph overview metrics">
+    <div class="metric-card"><div class="metric-icon">◎</div><div><div class="metric-label">Accounts</div><div class="metric-value" id="metricAccounts">—</div><div class="metric-note">Across the connected graph</div></div></div>
+    <div class="metric-card"><div class="metric-icon">⇄</div><div><div class="metric-label">Transfers</div><div class="metric-value" id="metricTransfers">—</div><div class="metric-note">Directed money movement</div></div></div>
+    <div class="metric-card"><div class="metric-icon">⚑</div><div><div class="metric-label">Flagged alerts</div><div class="metric-value" id="metricAlerts">—</div><div class="metric-note">Ready for investigation</div></div></div>
+    <div class="metric-card"><div class="metric-icon">▣</div><div><div class="metric-label">Frozen accounts</div><div class="metric-value" id="metricFrozen">0</div><div class="metric-note">Actions persisted in FalkorDB</div></div></div>
+  </section>
 
   <!-- ── Left Panel — Alerts ──────────────────────────────────────────────── -->
   <aside class="panel-left">
@@ -196,6 +251,9 @@
   <main class="panel-center">
     <div class="graph-toolbar">
       <span class="graph-toolbar-title">Live Investigation Graph</span>
+      <input class="graph-search" id="graphSearch" type="search" placeholder="Find account / node…" aria-label="Search graph nodes" oninput="searchGraph(this.value)" />
+      <button class="graph-control" onclick="fitGraph()" title="Fit the full graph in view">Fit graph</button>
+      <button class="graph-control" id="infraToggle" onclick="toggleInfra()">Hide infrastructure</button>
       <div class="graph-toolbar-spacer"></div>
       <div class="legend">
         <div class="legend-item"><div class="legend-dot" style="background:#4f8ef7"></div> Account</div>
@@ -268,6 +326,52 @@ let isInvestigating = false;
 let stepCount = 0;
 const TOTAL_STEPS = 7;
 let visitedNodes = new Set();
+let infrastructureHidden = false;
+let graphMetrics = { accounts: 0, transfers: 0, frozen: 0 };
+
+function updateMetric(id, value) {
+  const element = document.getElementById(id);
+  if (element) element.textContent = Number(value || 0).toLocaleString();
+}
+
+function updateOverview(alertCount) {
+  updateMetric('metricAccounts', graphMetrics.accounts);
+  updateMetric('metricTransfers', graphMetrics.transfers);
+  updateMetric('metricFrozen', graphMetrics.frozen);
+  if (typeof alertCount === 'number') updateMetric('metricAlerts', alertCount);
+}
+
+function fitGraph() {
+  if (cy) cy.animate({ fit: { eles: cy.elements(), padding: 36 } }, { duration: 350 });
+}
+
+function searchGraph(value) {
+  if (!cy) return;
+  const term = String(value || '').trim().toLowerCase();
+  cy.nodes().forEach(node => {
+    const d = node.data();
+    const matches = !term || [d.id, d.type, d.risk].some(v => String(v || '').toLowerCase().includes(term));
+    node.toggleClass('search-match', Boolean(term) && matches);
+    node.toggleClass('search-muted', Boolean(term) && !matches);
+  });
+  cy.edges().forEach(edge => {
+    const muted = Boolean(term) && edge.source().hasClass('search-muted') && edge.target().hasClass('search-muted');
+    edge.toggleClass('search-muted', muted);
+  });
+  if (term) {
+    const matches = cy.nodes('.search-match');
+    if (matches.length) cy.animate({ fit: { eles: matches, padding: 90 } }, { duration: 250 });
+  }
+}
+
+function toggleInfra() {
+  if (!cy) return;
+  infrastructureHidden = !infrastructureHidden;
+  cy.edges().filter(edge => edge.data('type') !== 'SENT').toggleClass('infra-hidden', infrastructureHidden);
+  const button = document.getElementById('infraToggle');
+  button.textContent = infrastructureHidden ? 'Show infrastructure' : 'Hide infrastructure';
+  button.classList.toggle('active', infrastructureHidden);
+}
 
 // ══════════════════════════════════════════════════════════════════════════════
 // Cytoscape graph initialization
@@ -375,6 +479,11 @@ function initCy(nodes, edges) {
     t.style.display = 'block';
   });
   cy.on('mouseout', 'edge', () => { document.getElementById('tooltip').style.display = 'none'; });
+
+  if (infrastructureHidden) cy.edges().filter(edge => edge.data('type') !== 'SENT').addClass('infra-hidden');
+  const searchInput = document.getElementById('graphSearch');
+  if (searchInput && searchInput.value) searchGraph(searchInput.value);
+  fitGraph();
 }
 
 // ══════════════════════════════════════════════════════════════════════════════
@@ -386,8 +495,12 @@ async function loadAlerts() {
     const res = await fetch('/api/alerts');
     const data = await res.json();
     renderAlerts(data.alerts || []);
+    updateOverview((data.alerts || []).length);
+    document.getElementById('connectionStatus').textContent = 'Graph connected';
   } catch (e) {
     console.error('Failed to load alerts:', e);
+    document.getElementById('connectionStatus').textContent = 'API unavailable';
+    document.getElementById('connectionStatus').previousElementSibling.style.background = 'var(--danger)';
     document.getElementById('alertList').innerHTML = '<div class="empty-state"><div class="icon">⚠️</div>Failed to load alerts. Is the server running?</div>';
   }
 }
@@ -396,9 +509,18 @@ async function loadGraph() {
   try {
     const res = await fetch('/api/graph');
     const data = await res.json();
-    initCy(data.nodes || [], data.edges || []);
+    const nodes = data.nodes || [];
+    const edges = data.edges || [];
+    graphMetrics = {
+      accounts: nodes.filter(n => n.label === 'Account').length,
+      transfers: edges.filter(e => e.type === 'SENT').length,
+      frozen: nodes.filter(n => n.label === 'Account' && n.frozen).length
+    };
+    updateOverview();
+    initCy(nodes, edges);
   } catch (e) {
     console.error('Failed to load graph:', e);
+    document.getElementById('connectionStatus').textContent = 'Graph unavailable';
   }
 }
 
