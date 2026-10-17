@@ -112,6 +112,23 @@ class TestNoLLMInvestigation:
             if hub:
                 assert "RING_C" in hub, f"Ring C hub should be a RING_C account, got: {hub}"
 
+    def test_report_has_explainable_graph_risk_assessment(self, alerts):
+        """Risk triage must be bounded, explainable, and included in the report."""
+        steps = collect_steps("ALERT_002", mode="nollm")
+        report_step = next((s for s in steps if s["tool"] == "report"), None)
+        assert report_step is not None
+
+        report = report_step["result"]
+        assessment = report.get("risk_assessment")
+        assert assessment is not None
+        assert 0 <= assessment["score"] <= 100
+        assert assessment["level"] in {"low", "elevated", "high", "critical"}
+        assert assessment["is_probability"] is False
+        assert assessment["positive_signals"] >= 1
+        assert any(factor["points"] > 0 for factor in assessment["factors"])
+        assert report["actions_taken"]["decision"] == "freeze_and_open_case"
+        assert "Graph evidence score" in assessment["explanation"]
+
     def test_unknown_alert_returns_error(self):
         """Requesting an unknown alert should yield an error step."""
         steps = collect_steps("NONEXISTENT_ALERT")
