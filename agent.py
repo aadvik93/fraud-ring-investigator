@@ -214,8 +214,8 @@ def run_nollm_investigation(alert: dict) -> Generator[dict, None, None]:
     # Do not freeze accounts solely because they are connected. Require graph
     # evidence to meet the documented threshold; always preserve a case record.
     freeze_accounts = list(dict.fromkeys(ring_community or all_ring_accounts))[:10]
-    should_freeze = risk_assessment["score"] >= 25 and bool(freeze_accounts)
-    action = "freeze_and_open_case" if should_freeze else "open_case"
+    action = _choose_action(risk_assessment, freeze_accounts)
+    should_freeze = action == "freeze_and_open_case"
     notes = (
         f"Automated investigation of {ring_name}. Triggered by alert {alert['id']}. "
         f"Graph evidence score {risk_assessment['score']}/100 ({risk_assessment['level']}). "
@@ -240,6 +240,15 @@ def run_nollm_investigation(alert: dict) -> Generator[dict, None, None]:
         "freeze_and_open_case" if should_freeze else "open_case_for_review"
     )
     yield _step("report", "Investigation complete — final report generated", report)
+
+
+def _choose_action(risk_assessment: dict, account_ids: list) -> str:
+    """Choose a response using the assessment's explicit threshold."""
+    threshold = int(risk_assessment.get("action_threshold", 25))
+    score = int(risk_assessment.get("score", 0))
+    if account_ids and score >= threshold:
+        return "freeze_and_open_case"
+    return "open_case"
 
 
 def _build_risk_assessment(r_linked: dict, r_hubs: dict, r_path: dict,
