@@ -36,7 +36,7 @@ def get_graph():
             _graph = _db_client.select_graph(GRAPH_NAME)
         return _graph
     except Exception:
-        _db_client = FalkorDB(host=FALKORDB_HOST, port=FALKORDB_PORT)
+        _db_client = FalkorDB(host=FALKORDB_HOST, port=FALKORDB_PORT, password=FALKORDB_PASSWORD)
         _graph = _db_client.select_graph(GRAPH_NAME)
         return _graph
 
