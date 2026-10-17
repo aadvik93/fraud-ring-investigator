@@ -803,10 +803,13 @@ function animateGraph(tool, result) {
     let newlyFrozen = 0;
     results.forEach(r => {
       const n = cy.getElementById(r.account_id);
-      if (n.length) {
+      if (!n.length) return;
+      if (r.frozen === true) {
         if (!n.hasClass('frozen')) newlyFrozen++;
         n.removeClass('ring-a ring-b ring-c account highlighted visited');
         n.addClass('frozen');
+      } else {
+        n.addClass('visited');
       }
     });
     graphMetrics.frozen = Math.min(graphMetrics.accounts, graphMetrics.frozen + newlyFrozen);
