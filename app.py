@@ -140,10 +140,17 @@ async def _stream_investigation(alert_id: str, mode: str) -> AsyncGenerator[str,
 async def investigate(alert_id: str, mode: str = "auto"):
     """
     Stream investigation steps as Server-Sent Events.
-    
+
     Query params:
       mode: auto | nollm | claude | gemini
     """
+    allowed_modes = {"auto", "nollm", "claude", "gemini"}
+    if mode not in allowed_modes:
+        raise HTTPException(
+            status_code=422,
+            detail=f"Unsupported mode '{mode}'. Choose one of: {', '.join(sorted(allowed_modes))}.",
+        )
+
     return StreamingResponse(
         _stream_investigation(alert_id, mode),
         media_type="text/event-stream",
