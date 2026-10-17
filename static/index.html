@@ -831,43 +831,43 @@ function renderReport(report) {
   container.innerHTML = `
     <div class="report-section">
       <h3>📊 Summary</h3>
-      <div class="report-summary">${r.summary || 'Investigation complete.'}</div>
+      <div class="report-summary">${escapeHtml(r.summary || 'Investigation complete.')}</div>
     </div>
 
     <div class="report-section">
       <h3>🔴 Case</h3>
-      <div class="case-badge">📁 ${caseId}</div>
+      <div class="case-badge">📁 ${escapeHtml(caseId)}</div>
       <div style="margin-top:8px">
-        <div class="report-stat"><span>Ring Identified</span><span class="report-stat-value">${r.ring_name || 'N/A'}</span></div>
+        <div class="report-stat"><span>Ring Identified</span><span class="report-stat-value">${escapeHtml(r.ring_name || 'N/A')}</span></div>
         <div class="report-stat"><span>Members</span><span class="report-stat-value">${members.length}</span></div>
         <div class="report-stat"><span>Frozen Accounts</span><span class="report-stat-value" style="color:var(--danger)">${frozen.length}</span></div>
-        <div class="report-stat"><span>Hub Account</span><span class="report-stat-value" style="color:var(--hub)">${r.hub_account || 'N/A'}</span></div>
+        <div class="report-stat"><span>Hub Account</span><span class="report-stat-value" style="color:var(--hub)">${escapeHtml(r.hub_account || 'N/A')}</span></div>
       </div>
     </div>
 
     ${members.length ? `
     <div class="report-section">
       <h3>👥 Ring Members</h3>
-      <div>${members.map(m => `<span class="chip ${m === r.hub_account ? 'chip-hub' : frozen.includes(m) ? 'chip-frozen' : 'chip-member'}">${m}${m === r.hub_account ? ' ⭐' : frozen.includes(m) ? ' ❄' : ''}</span>`).join('')}</div>
+      <div>${members.map(m => `<span class="chip ${m === r.hub_account ? 'chip-hub' : frozen.includes(m) ? 'chip-frozen' : 'chip-member'}">${escapeHtml(m)}${m === r.hub_account ? ' ⭐' : frozen.includes(m) ? ' ❄' : ''}</span>`).join('')}</div>
     </div>` : ''}
 
     ${devices.length || ips.length ? `
     <div class="report-section">
       <h3>🔗 Shared Infrastructure</h3>
-      ${devices.map(d => `<span class="chip chip-device">📱 Device: ${d}</span>`).join('')}
-      ${ips.map(i => `<span class="chip chip-ip">🌐 IP: ${i}</span>`).join('')}
+      ${devices.map(d => `<span class="chip chip-device">📱 Device: ${escapeHtml(d)}</span>`).join('')}
+      ${ips.map(i => `<span class="chip chip-ip">🌐 IP: ${escapeHtml(i)}</span>`).join('')}
     </div>` : ''}
 
     ${circles.length ? `
     <div class="report-section">
       <h3>🔄 Circular Money Flows</h3>
-      ${circles.map(c => `<div class="evidence-path"><div class="evidence-claim">♻️ Cycle: $${(c.total_amount || 0).toLocaleString()}</div><div class="evidence-path-nodes">${c.path || ''}</div></div>`).join('')}
+      ${circles.map(c => `<div class="evidence-path"><div class="evidence-claim">♻️ Cycle: $${(c.total_amount || 0).toLocaleString()}</div><div class="evidence-path-nodes">${escapeHtml(c.path || '')}</div></div>`).join('')}
     </div>` : ''}
 
     ${pagerank.length ? `
     <div class="report-section">
       <h3>📈 Top Hubs (transfer degree + PageRank)</h3>
-      ${pagerank.map((h,i) => `<div class="report-stat"><span>${i+1}. ${h.account_id}</span><span class="report-stat-value">${h.degree} transfers · PR ${h.pagerank_score}</span></div>`).join('')}
+      ${pagerank.map((h,i) => `<div class="report-stat"><span>${i+1}. ${escapeHtml(h.account_id)}</span><span class="report-stat-value">${h.degree} transfers · PR ${h.pagerank_score}</span></div>`).join('')}
     </div>` : ''}
 
     ${evidence.length ? `
@@ -875,10 +875,10 @@ function renderReport(report) {
       <h3>🔍 Evidence Paths</h3>
       ${evidence.map(e => `
         <div class="evidence-path">
-          <div class="evidence-claim">✅ ${e.claim}</div>
-          ${e.path ? `<div class="evidence-path-nodes">🗺 ${e.path}</div>` : ''}
-          ${e.accounts ? `<div class="evidence-path-nodes">Accounts: ${e.accounts.join(', ')}</div>` : ''}
-          <div class="evidence-cypher">${e.cypher || ''}</div>
+          <div class="evidence-claim">✅ ${escapeHtml(e.claim)}</div>
+          ${e.path ? `<div class="evidence-path-nodes">🗺 ${escapeHtml(e.path)}</div>` : ''}
+          ${e.accounts ? `<div class="evidence-path-nodes">Accounts: ${escapeHtml(e.accounts.join(', '))}</div>` : ''}
+          <div class="evidence-cypher">${escapeHtml(e.cypher || '')}</div>
         </div>
       `).join('')}
     </div>` : ''}
