@@ -3,15 +3,23 @@
 > **Track 01: Agents That Act on Connected Data**
 > Graph Hacks: Context for AI Agents (WeMakeDevs × FalkorDB), Oct 2026
 
-An agent that takes a flagged bank transaction, investigates it by querying a **FalkorDB graph**, identifies the fraud ring behind it, freezes the accounts, opens a compliance case (written back into the graph), and produces a report where every claim is backed by a graph path.
+An explainable fraud-investigation workbench: select a flagged transfer, trace the surrounding account network in **FalkorDB**, inspect relationship-based evidence, and record a case with the investigation actions. The UI streams each investigation step and visualizes the connected graph.
 
 FalkorDB is central: every investigation step is a graph query or a native graph algorithm, and the actions (freeze, open case) are written back as graph updates. Data is **fully synthetic**.
 
 ## What it does
-1. Pick a flagged alert in the web UI and click **Investigate**.
-2. The agent calls graph tools in sequence: linked accounts, communities, hub ranking, shortest path, cycle detection.
-3. It freezes the ring's accounts and creates a `Case` node linked to each of them.
-4. It outputs a report with ring members, hub account, shared device/IP, circular flows, actions taken, and the Cypher behind each claim. The graph view highlights the accounts involved.
+1. Choose one of the three synthetic alerts and click **Investigate**.
+2. Watch the investigation stream graph-backed tool steps: linked accounts, communities, hub ranking, shortest transfer path, and circular-flow detection.
+3. Review the evidence and the graph highlights, including shared infrastructure and transaction paths.
+4. The deterministic demo records the response actions in FalkorDB: account freeze state and a `Case` node linked to investigated accounts.
+5. Inspect the final report and the Cypher evidence used to support its findings.
+
+### Demo walkthrough
+- Start with **ALERT_003** to see the fan-out hub pattern and multiple mule recipients.
+- Try **ALERT_002** to inspect a circular transfer pattern.
+- Use **Reset Demo** to restore the seeded graph before recording another run.
+
+All data is synthetic. The planted patterns make the demo reproducible as a walkthrough, not a claim of production-grade fraud detection.
 
 The default mode (**No-LLM**) runs a deterministic pipeline over the same tools, so the demo works without any API key. An LLM mode (Claude or Gemini via API key) is implemented but is optional and lightly tested.
 
@@ -26,7 +34,7 @@ flowchart TD
 ```
 
 ## Graph data model
-Three planted rings: **A** (mule chain, shared device), **B** (circular money loop, shared IP), **C** (hub sending to 5 mules, shared IP), hidden among 20 legitimate accounts.
+Three planted rings: **A** (mule chain, shared device), **B** (circular money loop, shared IP), and **C** (hub sending to five mule accounts, shared IP), mixed with 20 low-risk background accounts. Seeded balances and transaction amounts are deterministic; timestamps are relative to the time the graph is seeded.
 
 ## Key queries and algorithms (as used in `tools.py`)
 
@@ -93,7 +101,7 @@ Optional LLM mode: copy `.env.example` to `.env` and add `ANTHROPIC_API_KEY` or 
 ```bash
 python3 -m pytest -q     # requires FalkorDB running and the graph seeded
 ```
-43 tests cover the six graph tools, the graph data endpoint and the no-LLM investigation.
+The current suite contains 43 tests covering the six graph tools, the graph data endpoint, and the no-LLM investigation. Run the suite against the same FalkorDB version used for the demo; graph algorithm support can vary by server version.
 
 ## MCP server
 `mcp_server.py` exposes the same six tools (`linked_accounts`, `trace_path`, `find_circular_flows`, `rank_hubs`, `find_communities`, `take_action`) through the Model Context Protocol. It is implemented but not covered by the automated tests.
@@ -107,3 +115,16 @@ python3 -m pytest -q     # requires FalkorDB running and the graph seeded
 This project was built with AI assistance: **Antigravity (Google Gemini models)** generated the initial scaffold and most files, and **Claude (Anthropic)** helped with planning, debugging, and fixing the graph queries and tests. The author ran, tested, and fixed the project, and is responsible for it.
 
 ## Project structure
+
+```text
+app.py             FastAPI routes, health check, and investigation stream
+agent.py           Deterministic pipeline and optional LLM orchestration
+tools.py           FalkorDB Cypher queries, graph algorithms, and graph actions
+seed.py            Synthetic graph and three planted fraud patterns
+mcp_server.py      MCP exposure for the graph tools
+static/index.html  Single-page investigation workbench
+ tests/            Automated tool, API, and agent tests
+Dockerfile         Container image definition
+docker-compose.yml Local app + FalkorDB orchestration
+render.yaml        Optional Render deployment configuration
+```
