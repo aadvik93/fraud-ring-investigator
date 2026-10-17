@@ -1,0 +1,39 @@
+version: "3.9"
+
+services:
+  falkordb:
+    image: falkordb/falkordb:latest
+    container_name: falkordb
+    ports:
+      - "6379:6379"   # Redis/FalkorDB protocol
+      - "3000:3000"   # FalkorDB Browser UI
+    volumes:
+      - falkordb_data:/data
+    restart: unless-stopped
+    healthcheck:
+      test: ["CMD", "redis-cli", "-p", "6379", "ping"]
+      interval: 5s
+      timeout: 3s
+      retries: 10
+
+  app:
+    build: .
+    container_name: fraud_investigator_app
+    ports:
+      - "8000:8000"   # FastAPI app
+    environment:
+      - FALKORDB_HOST=falkordb
+      - FALKORDB_PORT=6379
+      - ANTHROPIC_API_KEY=${ANTHROPIC_API_KEY:-}
+      - GEMINI_API_KEY=${GEMINI_API_KEY:-}
+    depends_on:
+      falkordb:
+        condition: service_healthy
+    volumes:
+      - .:/app
+    restart: unless-stopped
+    command: >
+      sh -c "python seed.py && uvicorn app:app --host 0.0.0.0 --port 8000 --reload"
+
+volumes:
+  falkordb_data:

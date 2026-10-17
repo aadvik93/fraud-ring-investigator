@@ -1,0 +1,819 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>Fraud Ring Investigator — FalkorDB</title>
+
+  <!-- Cytoscape.js for graph visualization -->
+  <script src="https://cdnjs.cloudflare.com/ajax/libs/cytoscape/3.28.1/cytoscape.min.js"></script>
+
+  <style>
+    /* ── Reset & base ──────────────────────────────────────────────────────── */
+    *, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
+
+    :root {
+      --bg-0: #0a0b0e;
+      --bg-1: #111318;
+      --bg-2: #1a1d24;
+      --bg-3: #232730;
+      --accent: #4f8ef7;
+      --accent-dim: #2d5aad;
+      --danger: #ef4444;
+      --warn: #f59e0b;
+      --success: #22c55e;
+      --muted: #6b7280;
+      --text: #e5e7eb;
+      --text-dim: #9ca3af;
+      --border: #2a2f3a;
+      --ring-a: #6366f1;
+      --ring-b: #ec4899;
+      --ring-c: #14b8a6;
+      --frozen: #ef4444;
+      --hub: #f59e0b;
+    }
+
+    html, body { height: 100%; background: var(--bg-0); color: var(--text); font-family: 'Inter', -apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif; font-size: 14px; }
+
+    /* ── Layout ──────────────────────────────────────────────────────────── */
+    .app { display: grid; grid-template-columns: 300px 1fr 380px; grid-template-rows: 56px 1fr; height: 100vh; gap: 0; }
+
+    /* Header */
+    .header { grid-column: 1 / -1; display: flex; align-items: center; gap: 16px; padding: 0 20px; background: var(--bg-1); border-bottom: 1px solid var(--border); z-index: 10; }
+    .logo { display: flex; align-items: center; gap: 10px; font-weight: 700; font-size: 15px; letter-spacing: -0.3px; }
+    .logo-icon { width: 30px; height: 30px; background: linear-gradient(135deg, var(--accent), #8b5cf6); border-radius: 8px; display: flex; align-items: center; justify-content: center; font-size: 16px; }
+    .header-subtitle { color: var(--muted); font-size: 12px; }
+    .header-right { margin-left: auto; display: flex; align-items: center; gap: 12px; }
+    .badge { padding: 3px 10px; border-radius: 20px; font-size: 11px; font-weight: 600; letter-spacing: 0.3px; }
+    .badge-falkor { background: rgba(79,142,247,0.15); color: var(--accent); border: 1px solid rgba(79,142,247,0.3); }
+    .badge-wcc { background: rgba(34,197,94,0.15); color: var(--success); border: 1px solid rgba(34,197,94,0.3); }
+    .btn { padding: 6px 14px; border-radius: 6px; border: none; cursor: pointer; font-size: 13px; font-weight: 500; transition: all 0.15s; }
+    .btn-primary { background: var(--accent); color: white; }
+    .btn-primary:hover { background: #3a7de0; }
+    .btn-danger { background: rgba(239,68,68,0.15); color: var(--danger); border: 1px solid rgba(239,68,68,0.3); }
+    .btn-danger:hover { background: rgba(239,68,68,0.25); }
+    .btn-ghost { background: transparent; color: var(--text-dim); border: 1px solid var(--border); }
+    .btn-ghost:hover { border-color: var(--accent); color: var(--accent); }
+    .btn:disabled { opacity: 0.4; cursor: not-allowed; }
+
+    /* Left Panel — Alerts */
+    .panel-left { background: var(--bg-1); border-right: 1px solid var(--border); overflow-y: auto; display: flex; flex-direction: column; }
+    .panel-title { padding: 14px 16px 10px; font-size: 11px; font-weight: 700; text-transform: uppercase; letter-spacing: 1px; color: var(--muted); border-bottom: 1px solid var(--border); }
+    .alert-list { flex: 1; padding: 8px; display: flex; flex-direction: column; gap: 8px; }
+    .alert-card { padding: 14px; border-radius: 10px; border: 1px solid var(--border); background: var(--bg-2); cursor: pointer; transition: all 0.15s; position: relative; overflow: hidden; }
+    .alert-card:hover { border-color: var(--accent-dim); transform: translateY(-1px); }
+    .alert-card.active { border-color: var(--accent); background: rgba(79,142,247,0.08); }
+    .alert-card.investigating { border-color: var(--warn); }
+    .alert-card.done { border-color: var(--success); }
+    .alert-ring-badge { position: absolute; top: 10px; right: 10px; font-size: 10px; font-weight: 700; padding: 2px 8px; border-radius: 10px; }
+    .ring-a-badge { background: rgba(99,102,241,0.2); color: var(--ring-a); border: 1px solid rgba(99,102,241,0.4); }
+    .ring-b-badge { background: rgba(236,72,153,0.2); color: var(--ring-b); border: 1px solid rgba(236,72,153,0.4); }
+    .ring-c-badge { background: rgba(20,184,166,0.2); color: var(--ring-c); border: 1px solid rgba(20,184,166,0.4); }
+    .alert-id { font-size: 11px; color: var(--muted); margin-bottom: 4px; }
+    .alert-amount { font-size: 20px; font-weight: 700; margin-bottom: 4px; }
+    .alert-from-to { font-size: 11px; color: var(--text-dim); margin-bottom: 8px; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+    .alert-reason { font-size: 11px; color: var(--text-dim); line-height: 1.5; }
+    .btn-investigate { width: 100%; margin-top: 12px; padding: 8px; border-radius: 6px; background: var(--accent); color: white; border: none; cursor: pointer; font-weight: 600; font-size: 13px; transition: all 0.15s; }
+    .btn-investigate:hover { background: #3a7de0; }
+    .btn-investigate:disabled { opacity: 0.4; cursor: not-allowed; }
+    .mode-select { width: 100%; margin-top: 8px; padding: 6px 8px; background: var(--bg-3); border: 1px solid var(--border); border-radius: 6px; color: var(--text); font-size: 12px; }
+
+    /* Center — Graph */
+    .panel-center { position: relative; background: var(--bg-0); overflow: hidden; display: flex; flex-direction: column; }
+    .graph-toolbar { display: flex; align-items: center; gap: 8px; padding: 10px 14px; background: var(--bg-1); border-bottom: 1px solid var(--border); }
+    .graph-toolbar-title { font-size: 12px; font-weight: 600; color: var(--text-dim); }
+    .graph-toolbar-spacer { flex: 1; }
+    .legend { display: flex; align-items: center; gap: 12px; }
+    .legend-item { display: flex; align-items: center; gap: 5px; font-size: 11px; color: var(--text-dim); }
+    .legend-dot { width: 10px; height: 10px; border-radius: 50%; }
+    #cy { flex: 1; background: var(--bg-0); }
+    .graph-placeholder { display: flex; flex-direction: column; align-items: center; justify-content: center; height: 100%; color: var(--muted); gap: 12px; }
+    .graph-placeholder .icon { font-size: 48px; opacity: 0.3; }
+
+    /* SQL toggle */
+    .sql-toggle-bar { background: var(--bg-1); border-top: 1px solid var(--border); }
+    .sql-toggle-btn { width: 100%; padding: 8px 16px; background: none; border: none; color: var(--text-dim); font-size: 12px; cursor: pointer; display: flex; align-items: center; gap: 6px; }
+    .sql-toggle-btn:hover { color: var(--accent); }
+    .sql-panel { padding: 14px 16px; display: none; }
+    .sql-panel.open { display: block; }
+    .sql-panel pre { background: var(--bg-2); border: 1px solid var(--border); border-radius: 8px; padding: 12px; font-size: 11px; color: #a8dadc; overflow-x: auto; line-height: 1.7; margin-top: 8px; }
+    .sql-panel h4 { font-size: 12px; font-weight: 700; color: var(--accent); margin-bottom: 4px; }
+    .sql-panel p { font-size: 12px; color: var(--text-dim); line-height: 1.6; }
+
+    /* Right Panel — Steps & Report */
+    .panel-right { background: var(--bg-1); border-left: 1px solid var(--border); display: flex; flex-direction: column; overflow: hidden; }
+    .panel-right-tabs { display: flex; border-bottom: 1px solid var(--border); }
+    .tab-btn { flex: 1; padding: 10px; background: none; border: none; color: var(--muted); font-size: 12px; font-weight: 600; cursor: pointer; border-bottom: 2px solid transparent; transition: all 0.15s; }
+    .tab-btn.active { color: var(--accent); border-bottom-color: var(--accent); }
+    .tab-content { flex: 1; overflow-y: auto; padding: 12px; display: none; }
+    .tab-content.active { display: block; }
+
+    /* Steps */
+    .step-item { margin-bottom: 10px; border-radius: 8px; border: 1px solid var(--border); background: var(--bg-2); overflow: hidden; }
+    .step-header { display: flex; align-items: center; gap: 8px; padding: 10px 12px; cursor: pointer; }
+    .step-header:hover { background: var(--bg-3); }
+    .step-tool-badge { padding: 2px 8px; border-radius: 4px; font-size: 10px; font-weight: 700; text-transform: uppercase; letter-spacing: 0.5px; background: rgba(79,142,247,0.15); color: var(--accent); }
+    .step-tool-badge.action { background: rgba(239,68,68,0.15); color: var(--danger); }
+    .step-tool-badge.report { background: rgba(34,197,94,0.15); color: var(--success); }
+    .step-tool-badge.start { background: rgba(245,158,11,0.15); color: var(--warn); }
+    .step-summary { font-size: 12px; color: var(--text-dim); flex: 1; }
+    .step-body { padding: 0 12px 12px; display: none; }
+    .step-body.open { display: block; }
+    .step-body pre { background: var(--bg-3); border-radius: 6px; padding: 10px; font-size: 10px; color: var(--text-dim); overflow-x: auto; white-space: pre-wrap; word-break: break-word; max-height: 300px; overflow-y: auto; line-height: 1.6; }
+    .step-chevron { font-size: 10px; color: var(--muted); transition: transform 0.2s; }
+    .step-chevron.open { transform: rotate(180deg); }
+    .step-spinner { display: inline-block; width: 12px; height: 12px; border: 2px solid rgba(79,142,247,0.3); border-top-color: var(--accent); border-radius: 50%; animation: spin 0.7s linear infinite; }
+    @keyframes spin { to { transform: rotate(360deg); } }
+
+    /* Report */
+    .report-section { margin-bottom: 16px; }
+    .report-section h3 { font-size: 12px; font-weight: 700; text-transform: uppercase; letter-spacing: 0.8px; color: var(--muted); margin-bottom: 8px; }
+    .report-summary { background: linear-gradient(135deg, rgba(79,142,247,0.1), rgba(139,92,246,0.1)); border: 1px solid rgba(79,142,247,0.3); border-radius: 10px; padding: 14px; font-size: 13px; line-height: 1.7; }
+    .report-stat { display: flex; justify-content: space-between; align-items: center; padding: 6px 0; border-bottom: 1px solid var(--border); font-size: 12px; }
+    .report-stat:last-child { border-bottom: none; }
+    .report-stat-value { font-weight: 700; color: var(--text); }
+    .chip { display: inline-block; margin: 2px; padding: 2px 8px; border-radius: 12px; font-size: 11px; font-weight: 500; }
+    .chip-member { background: rgba(99,102,241,0.2); color: #818cf8; }
+    .chip-hub { background: rgba(245,158,11,0.2); color: var(--hub); }
+    .chip-frozen { background: rgba(239,68,68,0.2); color: var(--frozen); }
+    .chip-device { background: rgba(20,184,166,0.2); color: var(--ring-c); }
+    .chip-ip { background: rgba(236,72,153,0.2); color: var(--ring-b); }
+    .evidence-path { background: var(--bg-2); border: 1px solid var(--border); border-radius: 8px; padding: 12px; margin-bottom: 8px; }
+    .evidence-claim { font-size: 12px; font-weight: 600; color: var(--text); margin-bottom: 6px; }
+    .evidence-cypher { font-family: 'Fira Code', 'Monaco', monospace; font-size: 10px; color: #a8dadc; background: var(--bg-3); padding: 8px; border-radius: 6px; overflow-x: auto; white-space: pre-wrap; word-break: break-word; }
+    .evidence-path-nodes { font-size: 11px; color: var(--accent); margin: 6px 0; }
+    .case-badge { display: inline-block; padding: 4px 12px; background: rgba(239,68,68,0.15); border: 1px solid rgba(239,68,68,0.4); border-radius: 6px; color: var(--danger); font-size: 13px; font-weight: 700; }
+    .empty-state { text-align: center; padding: 40px 20px; color: var(--muted); font-size: 13px; }
+    .empty-state .icon { font-size: 40px; margin-bottom: 12px; opacity: 0.4; }
+    .progress-bar { height: 2px; background: var(--border); border-radius: 2px; margin: 4px 0 12px; overflow: hidden; }
+    .progress-fill { height: 100%; background: linear-gradient(90deg, var(--accent), #8b5cf6); transition: width 0.3s; border-radius: 2px; }
+
+    /* Scrollbar */
+    ::-webkit-scrollbar { width: 6px; height: 6px; }
+    ::-webkit-scrollbar-track { background: transparent; }
+    ::-webkit-scrollbar-thumb { background: var(--border); border-radius: 3px; }
+    ::-webkit-scrollbar-thumb:hover { background: var(--muted); }
+
+    /* Tooltip */
+    .tooltip { position: fixed; background: var(--bg-3); border: 1px solid var(--border); border-radius: 6px; padding: 6px 10px; font-size: 11px; color: var(--text); pointer-events: none; z-index: 1000; max-width: 220px; }
+
+    /* Notification */
+    .notif { position: fixed; bottom: 20px; right: 20px; background: var(--bg-3); border: 1px solid var(--border); border-radius: 10px; padding: 12px 16px; font-size: 13px; z-index: 1000; animation: slideIn 0.3s ease; max-width: 300px; }
+    .notif.success { border-color: rgba(34,197,94,0.4); }
+    .notif.error { border-color: rgba(239,68,68,0.4); }
+    @keyframes slideIn { from { opacity: 0; transform: translateY(10px); } to { opacity: 1; transform: translateY(0); } }
+  </style>
+</head>
+<body>
+<div class="app">
+
+  <!-- ── Header ──────────────────────────────────────────────────────────── -->
+  <header class="header">
+    <div class="logo">
+      <div class="logo-icon">🕵️</div>
+      <div>
+        <div>Fraud Ring Investigator</div>
+        <div class="header-subtitle">Powered by FalkorDB Graph + AI Agent</div>
+      </div>
+    </div>
+    <div class="header-right">
+      <span class="badge badge-falkor">FalkorDB</span>
+      <span class="badge badge-wcc">PageRank + WCC</span>
+      <button class="btn btn-ghost" onclick="loadGraph()">↺ Refresh Graph</button>
+      <button class="btn btn-danger" onclick="resetGraph()" id="resetBtn">⚠ Reset Demo</button>
+    </div>
+  </header>
+
+  <!-- ── Left Panel — Alerts ──────────────────────────────────────────────── -->
+  <aside class="panel-left">
+    <div class="panel-title">🚨 Flagged Alerts</div>
+    <div class="alert-list" id="alertList">
+      <div class="empty-state"><div class="icon">⏳</div>Loading alerts...</div>
+    </div>
+  </aside>
+
+  <!-- ── Center — Graph ───────────────────────────────────────────────────── -->
+  <main class="panel-center">
+    <div class="graph-toolbar">
+      <span class="graph-toolbar-title">Live Investigation Graph</span>
+      <div class="graph-toolbar-spacer"></div>
+      <div class="legend">
+        <div class="legend-item"><div class="legend-dot" style="background:#4f8ef7"></div> Account</div>
+        <div class="legend-item"><div class="legend-dot" style="background:#6366f1"></div> Ring A</div>
+        <div class="legend-item"><div class="legend-dot" style="background:#ec4899"></div> Ring B</div>
+        <div class="legend-item"><div class="legend-dot" style="background:#14b8a6"></div> Ring C</div>
+        <div class="legend-item"><div class="legend-dot" style="background:#ef4444"></div> Frozen</div>
+        <div class="legend-item"><div class="legend-dot" style="background:#f59e0b"></div> Hub</div>
+      </div>
+    </div>
+    <div id="cy"></div>
+
+    <!-- SQL toggle -->
+    <div class="sql-toggle-bar">
+      <button class="sql-toggle-btn" onclick="toggleSQL()" id="sqlToggleBtn">
+        💡 Why Not SQL? — Click to see the multi-hop Cypher query vs. SQL
+        <span id="sqlArrow">▼</span>
+      </button>
+      <div class="sql-panel" id="sqlPanel">
+        <h4>🔗 Multi-hop Cypher (FalkorDB)</h4>
+        <pre id="cypherDisplay">MATCH (a:Account {id: 'RING_B_1'})-[r:SENT*2..6]->(a)
+RETURN [rel IN r | startNode(rel).id] AS cycle_nodes,
+       reduce(total = 0.0, rel IN r | total + rel.amount) AS total_amount</pre>
+        <p style="margin-top:8px">⚡ <strong>FalkorDB runs this in milliseconds</strong> using sparse matrix multiplication (GraphBLAS). The equivalent SQL needs a recursive CTE with cycle-detection guards — tens of lines of code, and degrades exponentially as the graph grows. Fraud patterns like "find all accounts that share a device AND appear in a money cycle" are natural in Cypher, unnatural in SQL.</p>
+      </div>
+    </div>
+  </main>
+
+  <!-- ── Right Panel — Steps + Report ────────────────────────────────────── -->
+  <aside class="panel-right">
+    <div class="panel-right-tabs">
+      <button class="tab-btn active" onclick="switchTab('steps')" id="tab-steps">Agent Steps</button>
+      <button class="tab-btn" onclick="switchTab('report')" id="tab-report">Final Report</button>
+    </div>
+
+    <div class="tab-content active" id="pane-steps">
+      <div id="stepsContainer">
+        <div class="empty-state">
+          <div class="icon">🤖</div>
+          Select an alert and click <strong>Investigate</strong> to start the agent.
+        </div>
+      </div>
+      <div class="progress-bar" id="progressBar" style="display:none">
+        <div class="progress-fill" id="progressFill" style="width:0%"></div>
+      </div>
+    </div>
+
+    <div class="tab-content" id="pane-report">
+      <div id="reportContainer">
+        <div class="empty-state">
+          <div class="icon">📋</div>
+          Run an investigation to see the structured report here.
+        </div>
+      </div>
+    </div>
+  </aside>
+
+</div>
+
+<!-- Tooltip -->
+<div class="tooltip" id="tooltip" style="display:none"></div>
+
+<script>
+// ══════════════════════════════════════════════════════════════════════════════
+// Global state
+// ══════════════════════════════════════════════════════════════════════════════
+let cy = null;
+let currentAlert = null;
+let isInvestigating = false;
+let stepCount = 0;
+const TOTAL_STEPS = 7;
+let visitedNodes = new Set();
+
+// ══════════════════════════════════════════════════════════════════════════════
+// Cytoscape graph initialization
+// ══════════════════════════════════════════════════════════════════════════════
+
+function initCy(nodes, edges) {
+  const elements = [];
+
+  nodes.forEach(n => {
+    const classes = [n.label.toLowerCase()];
+    if (n.id && n.id.includes('RING_A')) classes.push('ring-a');
+    else if (n.id && n.id.includes('RING_B')) classes.push('ring-b');
+    else if (n.id && n.id.includes('RING_C')) classes.push('ring-c');
+    if (n.frozen) classes.push('frozen');
+    elements.push({ data: { id: n.id, label: n.id, type: n.label, risk: n.risk, frozen: n.frozen }, classes: classes.join(' ') });
+  });
+
+  edges.forEach((e, i) => {
+    elements.push({
+      data: {
+        id: `e${i}`,
+        source: e.source,
+        target: e.target,
+        type: e.type,
+        amount: e.amount,
+        txnId: e.txn_id,
+        flagged: e.flagged
+      },
+      classes: e.flagged ? 'flagged-edge' : (e.type === 'SENT' ? 'sent-edge' : 'infra-edge')
+    });
+  });
+
+  if (cy) cy.destroy();
+
+  cy = cytoscape({
+    container: document.getElementById('cy'),
+    elements,
+    style: [
+      { selector: 'node', style: {
+        'width': 36, 'height': 36,
+        'label': 'data(id)',
+        'font-size': '9px',
+        'text-valign': 'bottom', 'text-halign': 'center',
+        'text-margin-y': 4,
+        'color': '#9ca3af',
+        'background-color': '#232730',
+        'border-width': 2, 'border-color': '#2a2f3a',
+        'text-max-width': '80px', 'text-wrap': 'ellipsis',
+        'transition-property': 'background-color border-color border-width width height',
+        'transition-duration': '0.3s'
+      }},
+      { selector: 'node.account', style: { 'background-color': '#1e3a5f', 'border-color': '#4f8ef7' }},
+      { selector: 'node.person', style: { 'background-color': '#1a2740', 'border-color': '#6b7280', 'shape': 'ellipse' }},
+      { selector: 'node.device', style: { 'background-color': '#1e2d40', 'border-color': '#4b5563', 'shape': 'rectangle', 'width': 28, 'height': 28 }},
+      { selector: 'node.ip', style: { 'background-color': '#1c2d30', 'border-color': '#4b5563', 'shape': 'diamond', 'width': 28, 'height': 28 }},
+      { selector: 'node.merchant', style: { 'background-color': '#2d2040', 'border-color': '#7c3aed', 'shape': 'pentagon', 'width': 28, 'height': 28 }},
+      { selector: 'node.ring-a', style: { 'background-color': '#1e1d4f', 'border-color': '#6366f1' }},
+      { selector: 'node.ring-b', style: { 'background-color': '#2d1a2a', 'border-color': '#ec4899' }},
+      { selector: 'node.ring-c', style: { 'background-color': '#0f2a2a', 'border-color': '#14b8a6' }},
+      { selector: 'node.frozen', style: { 'background-color': '#3d1a1a', 'border-color': '#ef4444', 'border-width': 3 }},
+      { selector: 'node.hub', style: { 'background-color': '#3d2e10', 'border-color': '#f59e0b', 'border-width': 3, 'width': 46, 'height': 46 }},
+      { selector: 'node.highlighted', style: { 'border-width': 4, 'border-color': '#fff', 'background-color': '#1a3a6f', 'width': 48, 'height': 48 }},
+      { selector: 'node.visited', style: { 'border-color': '#22c55e', 'border-width': 3 }},
+      { selector: 'edge', style: {
+        'width': 1.5, 'line-color': '#2a2f3a',
+        'target-arrow-color': '#2a2f3a', 'target-arrow-shape': 'triangle',
+        'curve-style': 'bezier', 'arrow-scale': 0.8,
+        'transition-property': 'line-color width', 'transition-duration': '0.3s'
+      }},
+      { selector: 'edge.sent-edge', style: { 'line-color': '#2d4a7a', 'target-arrow-color': '#2d4a7a', 'width': 2 }},
+      { selector: 'edge.infra-edge', style: { 'line-color': '#1e2d30', 'line-style': 'dashed' }},
+      { selector: 'edge.flagged-edge', style: { 'line-color': '#7c2d12', 'target-arrow-color': '#7c2d12', 'width': 3 }},
+      { selector: 'edge.highlighted', style: { 'line-color': '#4f8ef7', 'target-arrow-color': '#4f8ef7', 'width': 3 }},
+      { selector: 'edge.path-edge', style: { 'line-color': '#22c55e', 'target-arrow-color': '#22c55e', 'width': 4 }},
+      { selector: 'edge.cycle-edge', style: { 'line-color': '#f59e0b', 'target-arrow-color': '#f59e0b', 'width': 3 }},
+    ],
+    layout: {
+      name: 'cose',
+      animate: true,
+      animationDuration: 800,
+      nodeRepulsion: 8000,
+      idealEdgeLength: 100,
+      gravity: 0.8,
+      randomize: false
+    }
+  });
+
+  // Hover tooltip
+  cy.on('mouseover', 'node', (e) => {
+    const n = e.target.data();
+    const tooltip = document.getElementById('tooltip');
+    tooltip.innerHTML = `<strong>${n.id}</strong><br>Type: ${n.type}<br>Risk: ${n.risk || 'N/A'}<br>Frozen: ${n.frozen ? '❄️ Yes' : 'No'}`;
+    tooltip.style.display = 'block';
+  });
+  cy.on('mousemove', (e) => {
+    const t = document.getElementById('tooltip');
+    t.style.left = (e.originalEvent.clientX + 10) + 'px';
+    t.style.top = (e.originalEvent.clientY - 30) + 'px';
+  });
+  cy.on('mouseout', 'node', () => { document.getElementById('tooltip').style.display = 'none'; });
+  cy.on('mouseover', 'edge', (e) => {
+    const d = e.target.data();
+    const t = document.getElementById('tooltip');
+    t.innerHTML = `<strong>${d.type}</strong>${d.amount ? '<br>Amount: $' + d.amount : ''}${d.txnId ? '<br>' + d.txnId : ''}${d.flagged ? '<br>🚩 FLAGGED' : ''}`;
+    t.style.display = 'block';
+  });
+  cy.on('mouseout', 'edge', () => { document.getElementById('tooltip').style.display = 'none'; });
+}
+
+// ══════════════════════════════════════════════════════════════════════════════
+// Load data
+// ══════════════════════════════════════════════════════════════════════════════
+
+async function loadAlerts() {
+  try {
+    const res = await fetch('/api/alerts');
+    const data = await res.json();
+    renderAlerts(data.alerts || []);
+  } catch (e) {
+    console.error('Failed to load alerts:', e);
+    document.getElementById('alertList').innerHTML = '<div class="empty-state"><div class="icon">⚠️</div>Failed to load alerts. Is the server running?</div>';
+  }
+}
+
+async function loadGraph() {
+  try {
+    const res = await fetch('/api/graph');
+    const data = await res.json();
+    initCy(data.nodes || [], data.edges || []);
+  } catch (e) {
+    console.error('Failed to load graph:', e);
+  }
+}
+
+function getRingBadgeClass(ring) {
+  if (ring && ring.includes('Ring A')) return 'ring-a-badge';
+  if (ring && ring.includes('Ring B')) return 'ring-b-badge';
+  if (ring && ring.includes('Ring C')) return 'ring-c-badge';
+  return 'ring-a-badge';
+}
+
+function renderAlerts(alerts) {
+  const container = document.getElementById('alertList');
+  if (!alerts.length) {
+    container.innerHTML = '<div class="empty-state"><div class="icon">✅</div>No open alerts</div>';
+    return;
+  }
+  container.innerHTML = '';
+  alerts.forEach(alert => {
+    const card = document.createElement('div');
+    card.className = 'alert-card';
+    card.id = `alert-card-${alert.id}`;
+    card.innerHTML = `
+      <span class="alert-ring-badge ${getRingBadgeClass(alert.ring)}">${alert.ring ? alert.ring.split('–')[0].trim() : 'Alert'}</span>
+      <div class="alert-id">${alert.id} · ${alert.txn_id}</div>
+      <div class="alert-amount">$${parseFloat(alert.amount).toLocaleString('en-US', {minimumFractionDigits:2})}</div>
+      <div class="alert-from-to">📤 ${alert.from_acc} → ${alert.to_acc}</div>
+      <div class="alert-reason">${alert.reason}</div>
+      <select class="mode-select" id="mode-${alert.id}">
+        <option value="auto">🤖 Auto (LLM if available)</option>
+        <option value="nollm" selected>⚙️ No-LLM (deterministic)</option>
+        <option value="claude">🧠 Claude</option>
+        <option value="gemini">✨ Gemini</option>
+      </select>
+      <button class="btn-investigate" onclick="investigate('${alert.id}')" id="btn-${alert.id}">
+        🔍 Investigate
+      </button>
+    `;
+    card.onclick = (e) => {
+      if (e.target.tagName === 'BUTTON' || e.target.tagName === 'SELECT') return;
+      selectAlert(alert, card);
+    };
+    container.appendChild(card);
+  });
+}
+
+function selectAlert(alert, card) {
+  document.querySelectorAll('.alert-card').forEach(c => c.classList.remove('active'));
+  card.classList.add('active');
+  currentAlert = alert;
+  // Highlight the entry account in graph
+  if (cy && alert.to_acc) {
+    cy.elements().removeClass('highlighted');
+    const node = cy.getElementById(alert.to_acc);
+    if (node.length) { node.addClass('highlighted'); cy.animate({ zoom: 1.5, center: { eles: node } }, { duration: 500 }); }
+  }
+  // Show cypher for this alert
+  updateCypher(alert);
+}
+
+function updateCypher(alert) {
+  const display = document.getElementById('cypherDisplay');
+  if (display) {
+    display.textContent = `// Detect circular flows from flagged entry account
+MATCH (start:Account {id: '${alert.to_acc}'})-[r:SENT*2..6]->(start)
+RETURN [rel IN r | startNode(rel).id] AS cycle_nodes,
+       reduce(total = 0.0, rel IN r | total + rel.amount) AS total_amount
+
+// SQL equivalent requires recursive CTE with cycle guards:
+// WITH RECURSIVE cte AS (
+//   SELECT from_id, to_id, ARRAY[from_id] as path, false as cycle
+//   FROM transactions WHERE from_id = '${alert.to_acc}'
+//   UNION ALL
+//   SELECT t.from_id, t.to_id, cte.path || t.to_id,
+//          t.to_id = ANY(cte.path) as cycle
+//   FROM transactions t JOIN cte ON t.from_id = cte.to_id
+//   WHERE NOT cte.cycle AND cardinality(cte.path) < 6
+// ) SELECT path FROM cte WHERE cycle = true`;
+  }
+}
+
+// ══════════════════════════════════════════════════════════════════════════════
+// Investigation
+// ══════════════════════════════════════════════════════════════════════════════
+
+async function investigate(alertId) {
+  if (isInvestigating) return;
+
+  const mode = document.getElementById(`mode-${alertId}`).value;
+  const btn = document.getElementById(`btn-${alertId}`);
+  const card = document.getElementById(`alert-card-${alertId}`);
+
+  isInvestigating = true;
+  stepCount = 0;
+  visitedNodes.clear();
+
+  btn.disabled = true;
+  btn.textContent = '⏳ Investigating...';
+  card.classList.add('investigating');
+  card.classList.remove('done');
+
+  // Clear steps & switch to steps tab
+  document.getElementById('stepsContainer').innerHTML = '';
+  document.getElementById('reportContainer').innerHTML = '<div class="empty-state"><div class="icon">⏳</div>Waiting for investigation to complete...</div>';
+  switchTab('steps');
+
+  // Show progress bar
+  const progressBar = document.getElementById('progressBar');
+  progressBar.style.display = 'block';
+  updateProgress(0);
+
+  // Reset graph highlights
+  if (cy) cy.elements().removeClass('highlighted visited path-edge cycle-edge');
+
+  try {
+    const res = await fetch(`/api/investigate/${alertId}?mode=${mode}`, { method: 'POST' });
+    const reader = res.body.getReader();
+    const decoder = new TextDecoder();
+    let buffer = '';
+
+    while (true) {
+      const { done, value } = await reader.read();
+      if (done) break;
+      buffer += decoder.decode(value, { stream: true });
+      const lines = buffer.split('\n');
+      buffer = lines.pop(); // keep incomplete line
+
+      for (const line of lines) {
+        if (line.startsWith('data: ')) {
+          try {
+            const payload = JSON.parse(line.slice(6));
+            if (payload.type === 'ping') continue;
+            if (payload.type === 'done') break;
+            handleStep(payload, alertId);
+          } catch (e) { /* ignore parse errors */ }
+        }
+      }
+    }
+
+    card.classList.remove('investigating');
+    card.classList.add('done');
+    btn.textContent = '✅ Done — Investigate Again';
+    btn.disabled = false;
+    updateProgress(100);
+    showNotif('✅ Investigation complete! See Final Report.', 'success');
+
+  } catch (e) {
+    console.error('Investigation error:', e);
+    card.classList.remove('investigating');
+    btn.textContent = '❌ Error — Retry';
+    btn.disabled = false;
+    showNotif('❌ Investigation failed: ' + e.message, 'error');
+  }
+
+  isInvestigating = false;
+}
+
+function handleStep(step, alertId) {
+  const tool = step.tool || step.type || 'unknown';
+  const summary = step.summary || '';
+  const result = step.result || step;
+
+  stepCount++;
+  updateProgress(Math.min(95, (stepCount / TOTAL_STEPS) * 100));
+
+  // Add step card
+  addStepCard(tool, summary, result);
+
+  // Animate graph based on tool
+  animateGraph(tool, result);
+
+  // If it's the final report, render it
+  if (tool === 'report' || (result && result.type === 'report')) {
+    const reportData = result.type === 'report' ? result : result;
+    renderReport(reportData);
+    setTimeout(() => switchTab('report'), 500);
+  }
+}
+
+function addStepCard(tool, summary, result) {
+  const container = document.getElementById('stepsContainer');
+  const isAction = tool === 'take_action';
+  const isReport = tool === 'report';
+  const isStart = tool === 'start';
+
+  const div = document.createElement('div');
+  div.className = 'step-item';
+  const id = `step-${Date.now()}`;
+  div.innerHTML = `
+    <div class="step-header" onclick="toggleStep('${id}')">
+      <span class="step-tool-badge ${isAction ? 'action' : isReport ? 'report' : isStart ? 'start' : ''}">${tool}</span>
+      <span class="step-summary">${summary}</span>
+      <span class="step-chevron" id="chev-${id}">▼</span>
+    </div>
+    <div class="step-body" id="${id}">
+      <pre>${JSON.stringify(result, null, 2)}</pre>
+    </div>
+  `;
+  container.appendChild(div);
+  container.scrollTop = container.scrollHeight;
+}
+
+function toggleStep(id) {
+  const body = document.getElementById(id);
+  const chev = document.getElementById(`chev-${id}`);
+  body.classList.toggle('open');
+  chev.classList.toggle('open');
+}
+
+function animateGraph(tool, result) {
+  if (!cy || !result) return;
+
+  if (tool === 'linked_accounts') {
+    const accounts = result.accounts || [];
+    accounts.forEach(a => {
+      if (a.account_id) {
+        const node = cy.getElementById(a.account_id);
+        if (node.length) { node.addClass('visited'); visitedNodes.add(a.account_id); }
+      }
+    });
+    // Also highlight the source
+    const src = result.input && result.input.account_id;
+    if (src) { const n = cy.getElementById(src); if (n.length) n.addClass('highlighted'); }
+
+  } else if (tool === 'trace_path' && result.found) {
+    const path = result.path || [];
+    path.forEach(nid => { const n = cy.getElementById(nid); if (n.length) n.addClass('visited'); });
+    // Highlight path edges
+    for (let i = 0; i < path.length - 1; i++) {
+      cy.edges(`[source="${path[i]}"][target="${path[i+1]}"]`).addClass('path-edge');
+    }
+
+  } else if (tool === 'find_circular_flows') {
+    const cycles = result.cycles || [];
+    cycles.forEach(c => {
+      const nodes = c.cycle_path || [];
+      nodes.forEach(nid => { const n = cy.getElementById(nid); if (n.length) n.addClass('visited'); });
+      for (let i = 0; i < nodes.length - 1; i++) {
+        cy.edges(`[source="${nodes[i]}"][target="${nodes[i+1]}"]`).addClass('cycle-edge');
+      }
+    });
+
+  } else if (tool === 'rank_hubs') {
+    const hubs = result.hubs || [];
+    if (hubs.length > 0) {
+      const topHub = cy.getElementById(hubs[0].account_id);
+      if (topHub.length) topHub.addClass('hub highlighted');
+    }
+
+  } else if (tool === 'find_communities') {
+    const comms = result.communities || [];
+    comms.forEach(c => {
+      if (c.contains_fraud_accounts) {
+        (c.members || []).forEach(mid => {
+          const n = cy.getElementById(mid);
+          if (n.length) n.addClass('visited');
+        });
+      }
+    });
+
+  } else if (tool === 'take_action') {
+    const results = result.results || [];
+    results.forEach(r => {
+      const n = cy.getElementById(r.account_id);
+      if (n.length) {
+        n.removeClass('ring-a ring-b ring-c account highlighted visited');
+        n.addClass('frozen');
+      }
+    });
+  }
+
+  // Fit view to visited nodes
+  if (visitedNodes.size > 0) {
+    const visitedEls = cy.nodes().filter(n => visitedNodes.has(n.id()));
+    if (visitedEls.length > 2) {
+      cy.animate({ fit: { eles: visitedEls, padding: 60 } }, { duration: 600 });
+    }
+  }
+}
+
+// ══════════════════════════════════════════════════════════════════════════════
+// Report rendering
+// ══════════════════════════════════════════════════════════════════════════════
+
+function renderReport(report) {
+  const container = document.getElementById('reportContainer');
+  if (!report || report.type === 'report' && !report.summary) return;
+
+  const r = report;
+  const members = r.ring_members || [];
+  const frozen = (r.actions_taken && r.actions_taken.frozen_accounts) || [];
+  const caseId = (r.actions_taken && r.actions_taken.case_id) || 'N/A';
+  const evidence = r.evidence_paths || [];
+  const circles = r.circular_flows || [];
+  const devices = r.shared_devices || [];
+  const ips = r.shared_ips || [];
+  const pagerank = r.pagerank_top || [];
+
+  container.innerHTML = `
+    <div class="report-section">
+      <h3>📊 Summary</h3>
+      <div class="report-summary">${r.summary || 'Investigation complete.'}</div>
+    </div>
+
+    <div class="report-section">
+      <h3>🔴 Case</h3>
+      <div class="case-badge">📁 ${caseId}</div>
+      <div style="margin-top:8px">
+        <div class="report-stat"><span>Ring Identified</span><span class="report-stat-value">${r.ring_name || 'N/A'}</span></div>
+        <div class="report-stat"><span>Members</span><span class="report-stat-value">${members.length}</span></div>
+        <div class="report-stat"><span>Frozen Accounts</span><span class="report-stat-value" style="color:var(--danger)">${frozen.length}</span></div>
+        <div class="report-stat"><span>Hub Account</span><span class="report-stat-value" style="color:var(--hub)">${r.hub_account || 'N/A'}</span></div>
+      </div>
+    </div>
+
+    ${members.length ? `
+    <div class="report-section">
+      <h3>👥 Ring Members</h3>
+      <div>${members.map(m => `<span class="chip ${m === r.hub_account ? 'chip-hub' : frozen.includes(m) ? 'chip-frozen' : 'chip-member'}">${m}${m === r.hub_account ? ' ⭐' : frozen.includes(m) ? ' ❄' : ''}</span>`).join('')}</div>
+    </div>` : ''}
+
+    ${devices.length || ips.length ? `
+    <div class="report-section">
+      <h3>🔗 Shared Infrastructure</h3>
+      ${devices.map(d => `<span class="chip chip-device">📱 Device: ${d}</span>`).join('')}
+      ${ips.map(i => `<span class="chip chip-ip">🌐 IP: ${i}</span>`).join('')}
+    </div>` : ''}
+
+    ${circles.length ? `
+    <div class="report-section">
+      <h3>🔄 Circular Money Flows</h3>
+      ${circles.map(c => `<div class="evidence-path"><div class="evidence-claim">♻️ Cycle: $${(c.total_amount || 0).toLocaleString()}</div><div class="evidence-path-nodes">${c.path || ''}</div></div>`).join('')}
+    </div>` : ''}
+
+    ${pagerank.length ? `
+    <div class="report-section">
+      <h3>📈 Top Hubs (transfer degree + PageRank)</h3>
+      ${pagerank.map((h,i) => `<div class="report-stat"><span>${i+1}. ${h.account_id}</span><span class="report-stat-value">${h.degree} transfers · PR ${h.pagerank_score}</span></div>`).join('')}
+    </div>` : ''}
+
+    ${evidence.length ? `
+    <div class="report-section">
+      <h3>🔍 Evidence Paths</h3>
+      ${evidence.map(e => `
+        <div class="evidence-path">
+          <div class="evidence-claim">✅ ${e.claim}</div>
+          ${e.path ? `<div class="evidence-path-nodes">🗺 ${e.path}</div>` : ''}
+          ${e.accounts ? `<div class="evidence-path-nodes">Accounts: ${e.accounts.join(', ')}</div>` : ''}
+          <div class="evidence-cypher">${e.cypher || ''}</div>
+        </div>
+      `).join('')}
+    </div>` : ''}
+  `;
+}
+
+// ══════════════════════════════════════════════════════════════════════════════
+// UI utilities
+// ══════════════════════════════════════════════════════════════════════════════
+
+function switchTab(tab) {
+  document.querySelectorAll('.tab-btn').forEach(b => b.classList.remove('active'));
+  document.querySelectorAll('.tab-content').forEach(p => p.classList.remove('active'));
+  document.getElementById(`tab-${tab}`).classList.add('active');
+  document.getElementById(`pane-${tab}`).classList.add('active');
+}
+
+function updateProgress(pct) {
+  document.getElementById('progressFill').style.width = pct + '%';
+}
+
+function toggleSQL() {
+  const panel = document.getElementById('sqlPanel');
+  const arrow = document.getElementById('sqlArrow');
+  panel.classList.toggle('open');
+  arrow.textContent = panel.classList.contains('open') ? '▲' : '▼';
+}
+
+function showNotif(msg, type) {
+  const n = document.createElement('div');
+  n.className = `notif ${type || ''}`;
+  n.textContent = msg;
+  document.body.appendChild(n);
+  setTimeout(() => n.remove(), 4000);
+}
+
+async function resetGraph() {
+  if (!confirm('This will clear all graph data and re-seed. Continue?')) return;
+  const btn = document.getElementById('resetBtn');
+  btn.disabled = true;
+  btn.textContent = '⏳ Resetting...';
+  try {
+    const res = await fetch('/api/reset', { method: 'POST' });
+    const data = await res.json();
+    if (data.status === 'ok') {
+      showNotif('✅ Graph reset! Reloading...', 'success');
+      setTimeout(() => { loadAlerts(); loadGraph(); }, 500);
+    } else {
+      showNotif('❌ Reset failed: ' + (data.detail || 'unknown error'), 'error');
+    }
+  } catch (e) {
+    showNotif('❌ Reset error: ' + e.message, 'error');
+  }
+  btn.disabled = false;
+  btn.textContent = '⚠ Reset Demo';
+}
+
+// ══════════════════════════════════════════════════════════════════════════════
+// Init
+// ══════════════════════════════════════════════════════════════════════════════
+
+async function init() {
+  await loadAlerts();
+  await loadGraph();
+}
+
+init();
+</script>
+</body>
+</html>

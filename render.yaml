@@ -1,0 +1,18 @@
+services:
+  - type: web
+    name: fraud-ring-investigator
+    env: python
+    buildCommand: pip install -r requirements.txt
+    startCommand: python seed.py && uvicorn app:app --host 0.0.0.0 --port $PORT
+    envVars:
+      - key: FALKORDB_HOST
+        sync: false   # Set from FalkorDB Cloud dashboard
+      - key: FALKORDB_PORT
+        value: "6379"
+      - key: FALKORDB_PASSWORD
+        sync: false
+      - key: ANTHROPIC_API_KEY
+        sync: false
+      - key: GEMINI_API_KEY
+        sync: false
+    healthCheckPath: /api/health
