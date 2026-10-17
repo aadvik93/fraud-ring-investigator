@@ -11,7 +11,7 @@ import sys
 
 sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 
-from agent import run_investigation, run_nollm_investigation
+from agent import run_investigation, run_nollm_investigation, _choose_action
 from tools import get_alerts
 
 
@@ -30,6 +30,13 @@ def collect_steps(alert_id: str, mode: str = "nollm") -> list:
     for step in run_investigation(alert_id, mode=mode):
         steps.append(step)
     return steps
+
+
+def test_action_policy_requires_evidence_threshold_and_accounts():
+    """Low evidence must open a review case instead of auto-freezing accounts."""
+    assert _choose_action({"score": 24, "action_threshold": 25}, ["ACC_1"]) == "open_case"
+    assert _choose_action({"score": 25, "action_threshold": 25}, ["ACC_1"]) == "freeze_and_open_case"
+    assert _choose_action({"score": 90, "action_threshold": 25}, []) == "open_case"
 
 
 class TestNoLLMInvestigation:
