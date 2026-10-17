@@ -2,7 +2,7 @@ name: CI
 
 on:
   push:
-    branches: [main, improve-demo-reliability]
+    branches: [main, improve-demo-reliability, judge-ready-workbench]
   pull_request:
     branches: [main]
 
@@ -21,6 +21,17 @@ jobs:
           --health-retries 20
     steps:
       - uses: actions/checkout@v4
+      - name: Validate frontend JavaScript syntax
+        run: |
+          python - <<'PY'
+          from pathlib import Path
+          import re
+          html = Path("static/index.html").read_text()
+          scripts = re.findall(r"<script>(.*?)</script>", html, re.DOTALL)
+          assert scripts, "No inline JavaScript found in static/index.html"
+          Path("/tmp/fraud-ring-ui.js").write_text("\n".join(scripts))
+          PY
+          node --check /tmp/fraud-ring-ui.js
       - uses: actions/setup-python@v5
         with:
           python-version: "3.11"
