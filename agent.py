@@ -316,7 +316,7 @@ def _build_report(alert, r_linked, r_communities, r_hubs, r_path, r_cycles, r_ac
                   ring_community, hub_account) -> dict:
     """Assemble the structured final report."""
     case_id = r_action.get("case_id", "N/A")
-    frozen = [x["account_id"] for x in r_action.get("results", [])]
+    frozen = [x["account_id"] for x in r_action.get("results", []) if x.get("frozen") is True]
 
     # Shared devices/IPs from linked_accounts
     devices = [a for a in r_linked.get("accounts", []) if a.get("link_type") == "device"]
