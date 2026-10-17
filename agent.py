@@ -203,19 +203,103 @@ def run_nollm_investigation(alert: dict) -> Generator[dict, None, None]:
             r5 = r5b
             yield _step("find_circular_flows", "Found circular flows at entry account", r5)
 
-    # Step 6: Take action — freeze and open case
-    freeze_accounts = list(set(ring_community or all_ring_accounts))[:10]  # cap at 10
-    notes = f"Automated investigation of {ring_name}. Triggered by alert {alert['id']}."
+    # Step 6: Score the graph evidence before choosing an action.
+    risk_assessment = _build_risk_assessment(r1, r3, r4, r5, ring_community)
+    yield _step(
+        "risk_assessment",
+        f"Evidence score: {risk_assessment['score']}/100 ({risk_assessment['level']})",
+        risk_assessment
+    )
+
+    # Do not freeze accounts solely because they are connected. Require graph
+    # evidence to meet the documented threshold; always preserve a case record.
+    freeze_accounts = list(dict.fromkeys(ring_community or all_ring_accounts))[:10]
+    should_freeze = risk_assessment["score"] >= 25 and bool(freeze_accounts)
+    action = "freeze_and_open_case" if should_freeze else "open_case"
+    notes = (
+        f"Automated investigation of {ring_name}. Triggered by alert {alert['id']}. "
+        f"Graph evidence score {risk_assessment['score']}/100 ({risk_assessment['level']}). "
+        f"Action policy: {'freeze accounts and open case' if should_freeze else 'open case for analyst review; no automatic freeze'}."
+    )
     r6 = dispatch_tool("take_action", {
         "account_ids": freeze_accounts,
-        "action": "freeze_and_open_case",
+        "action": action,
         "notes": notes
     })
-    yield _step("take_action", "Freezing accounts and opening compliance case", r6)
+    yield _step(
+        "take_action",
+        "Freezing evidence-supported accounts and opening compliance case" if should_freeze
+        else "Opening review case without automatic freeze",
+        r6
+    )
 
-    # Step 7: Build final report
+    # Step 7: Build final report and include the score's auditable components.
     report = _build_report(alert, r1, r2, r3, r4, r5, r6, ring_community, hub_account)
+    report["risk_assessment"] = risk_assessment
+    report["actions_taken"]["decision"] = (
+        "freeze_and_open_case" if should_freeze else "open_case_for_review"
+    )
     yield _step("report", "Investigation complete — final report generated", report)
+
+
+def _build_risk_assessment(r_linked: dict, r_hubs: dict, r_path: dict,
+                           r_cycles: dict, ring_members: list) -> dict:
+    """Return a transparent, rule-based score from observed graph evidence.
+
+    This is a demo triage heuristic, not a calibrated probability of fraud.
+    Each factor is scored only when the corresponding graph result exists.
+    """
+    linked = r_linked.get("accounts", [])
+    members = set(ring_members or [])
+    device_accounts = sorted({
+        row.get("account_id") for row in linked
+        if row.get("link_type") == "device" and row.get("account_id")
+    })
+    ip_accounts = sorted({
+        row.get("account_id") for row in linked
+        if row.get("link_type") == "ip" and row.get("account_id")
+    })
+    merchant_accounts = sorted({
+        row.get("account_id") for row in linked
+        if row.get("link_type") == "merchant" and row.get("account_id")
+    })
+    cycles = r_cycles.get("cycles", []) or []
+    ring_hubs = [
+        hub for hub in r_hubs.get("hubs", [])
+        if hub.get("account_id") in members
+    ]
+    top_degree = max((int(hub.get("degree") or 0) for hub in ring_hubs), default=0)
+    hops = int(r_path.get("hops", -1) or 0) if r_path.get("found") else 0
+
+    factors = [
+        {"key": "shared_device", "label": "Shared device", "points": 20 if device_accounts else 0,
+         "observed": f"{len(device_accounts)} linked account(s)", "accounts": device_accounts},
+        {"key": "shared_ip", "label": "Shared IP address", "points": 20 if ip_accounts else 0,
+         "observed": f"{len(ip_accounts)} linked account(s)", "accounts": ip_accounts},
+        {"key": "shared_merchant", "label": "Shared merchant", "points": 10 if merchant_accounts else 0,
+         "observed": f"{len(merchant_accounts)} linked account(s)", "accounts": merchant_accounts},
+        {"key": "circular_flow", "label": "Circular transfer flow", "points": 35 if cycles else 0,
+         "observed": f"{len(cycles)} cycle(s) found"},
+        {"key": "hub_activity", "label": "High transfer degree", "points": 15 if top_degree >= 4 else 0,
+         "observed": f"Maximum ring transfer degree: {top_degree}"},
+        {"key": "multi_hop_path", "label": "Multi-hop transfer path", "points": 10 if hops >= 2 else 0,
+         "observed": f"{hops} hop(s) in shortest path" if hops >= 0 else "No path found"},
+    ]
+    score = min(100, sum(factor["points"] for factor in factors))
+    level = "critical" if score >= 75 else "high" if score >= 50 else "elevated" if score >= 25 else "low"
+    return {
+        "score": score,
+        "level": level,
+        "method": "Transparent rule-based graph evidence heuristic",
+        "is_probability": False,
+        "action_threshold": 25,
+        "factors": factors,
+        "positive_signals": sum(1 for factor in factors if factor["points"] > 0),
+        "explanation": (
+            "Points reflect observed graph patterns, not a statistical probability. "
+            "Scores of 25 or more trigger freeze-and-case; lower scores open a review case without an automatic freeze."
+        ),
+    }
 
 
 def _step(tool: str, summary: str, result: dict) -> dict:
