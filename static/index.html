@@ -145,6 +145,13 @@
     .report-section { margin-bottom: 16px; }
     .report-section h3 { font-size: 12px; font-weight: 700; text-transform: uppercase; letter-spacing: 0.8px; color: var(--muted); margin-bottom: 8px; }
     .report-summary { background: linear-gradient(135deg, rgba(79,142,247,0.1), rgba(139,92,246,0.1)); border: 1px solid rgba(79,142,247,0.3); border-radius: 10px; padding: 14px; font-size: 13px; line-height: 1.7; }
+    .risk-meter { height:8px; overflow:hidden; background:var(--bg-3); border-radius:99px; margin:10px 0 7px; }
+    .risk-meter-fill { height:100%; border-radius:99px; background:linear-gradient(90deg,#f59e0b,#ef4444); transition:width .4s ease; }
+    .risk-factor { display:flex; justify-content:space-between; gap:12px; padding:7px 0; border-bottom:1px solid var(--border); font-size:11px; }
+    .risk-factor:last-child { border-bottom:0; }
+    .risk-factor-label { font-weight:600; }
+    .risk-factor-note { color:var(--text-dim); margin-top:2px; }
+    .risk-points { color:var(--warn); font-weight:750; white-space:nowrap; }
     .report-stat { display: flex; justify-content: space-between; align-items: center; padding: 6px 0; border-bottom: 1px solid var(--border); font-size: 12px; }
     .report-stat:last-child { border-bottom: none; }
     .report-stat-value { font-weight: 700; color: var(--text); }
@@ -832,12 +839,38 @@ function renderReport(report) {
   const devices = r.shared_devices || [];
   const ips = r.shared_ips || [];
   const pagerank = r.pagerank_top || [];
+  const risk = r.risk_assessment || null;
+  const riskFactors = risk && Array.isArray(risk.factors) ? risk.factors.filter(f => Number(f.points) > 0) : [];
 
   container.innerHTML = `
     <div class="report-section">
       <h3>📊 Summary</h3>
       <div class="report-summary">${escapeHtml(r.summary || 'Investigation complete.')}</div>
     </div>
+
+    ${risk ? `
+    <div class="report-section">
+      <h3>🧭 Graph Evidence Score</h3>
+      <div class="evidence-path">
+        <div class="report-stat">
+          <span>Risk triage level</span>
+          <span class="report-stat-value">${escapeHtml(String(risk.level || 'unknown').toUpperCase())}</span>
+        </div>
+        <div class="report-stat">
+          <span>Evidence score</span>
+          <span class="report-stat-value">${Number(risk.score) || 0} / 100</span>
+        </div>
+        <div class="risk-meter" role="meter" aria-label="Graph evidence score" aria-valuemin="0" aria-valuemax="100" aria-valuenow="${Math.max(0, Math.min(100, Number(risk.score) || 0))}">
+          <div class="risk-meter-fill" style="width:${Math.max(0, Math.min(100, Number(risk.score) || 0))}%"></div>
+        </div>
+        ${riskFactors.length ? riskFactors.map(f => `
+          <div class="risk-factor">
+            <div><div class="risk-factor-label">${escapeHtml(f.label)}</div><div class="risk-factor-note">${escapeHtml(f.observed || '')}</div></div>
+            <div class="risk-points">+${Number(f.points) || 0}</div>
+          </div>`).join('') : '<div class="risk-factor">No positive graph signals were found.</div>'}
+        <div class="risk-factor-note" style="margin-top:9px">${escapeHtml(risk.explanation || 'Heuristic score based on observed graph patterns, not a probability.')}</div>
+      </div>
+    </div>` : ''}
 
     <div class="report-section">
       <h3>🔴 Case</h3>
