@@ -127,7 +127,7 @@ class TestNoLLMInvestigation:
         assert assessment["positive_signals"] >= 1
         assert any(factor["points"] > 0 for factor in assessment["factors"])
         assert report["actions_taken"]["decision"] == "freeze_and_open_case"
-        assert "Graph evidence score" in assessment["explanation"]
+        assert "Points reflect observed graph patterns" in assessment["explanation"]
 
     def test_unknown_alert_returns_error(self):
         """Requesting an unknown alert should yield an error step."""
