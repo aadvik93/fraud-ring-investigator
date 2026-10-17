@@ -27,6 +27,10 @@ def clear_graph(g):
     print("✓ Graph cleared")
 
 def seed(g):
+    # Keep generated balances and transaction amounts stable across demo resets.
+    # Timestamps intentionally remain relative to the current time.
+    random.seed(20261018)
+
     # ── Legit background users (noise) ──────────────────────────────────────
     for i in range(1, 21):
         g.query(f"""
