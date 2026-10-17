@@ -329,6 +329,12 @@ let visitedNodes = new Set();
 let infrastructureHidden = false;
 let graphMetrics = { accounts: 0, transfers: 0, frozen: 0 };
 
+function escapeHtml(value) {
+  return String(value ?? '').replace(/[&<>"']/g, char => ({
+    '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;'
+  })[char]);
+}
+
 function updateMetric(id, value) {
   const element = document.getElementById(id);
   if (element) element.textContent = Number(value || 0).toLocaleString();
@@ -463,7 +469,7 @@ function initCy(nodes, edges) {
   cy.on('mouseover', 'node', (e) => {
     const n = e.target.data();
     const tooltip = document.getElementById('tooltip');
-    tooltip.innerHTML = `<strong>${n.id}</strong><br>Type: ${n.type}<br>Risk: ${n.risk || 'N/A'}<br>Frozen: ${n.frozen ? '❄️ Yes' : 'No'}`;
+    tooltip.innerHTML = `<strong>${escapeHtml(n.id)}</strong><br>Type: ${escapeHtml(n.type)}<br>Risk: ${escapeHtml(n.risk || 'N/A')}<br>Frozen: ${n.frozen ? '❄️ Yes' : 'No'}`;
     tooltip.style.display = 'block';
   });
   cy.on('mousemove', (e) => {
@@ -475,7 +481,7 @@ function initCy(nodes, edges) {
   cy.on('mouseover', 'edge', (e) => {
     const d = e.target.data();
     const t = document.getElementById('tooltip');
-    t.innerHTML = `<strong>${d.type}</strong>${d.amount ? '<br>Amount: $' + d.amount : ''}${d.txnId ? '<br>' + d.txnId : ''}${d.flagged ? '<br>🚩 FLAGGED' : ''}`;
+    t.innerHTML = `<strong>${escapeHtml(d.type)}</strong>${d.amount ? '<br>Amount: 
     t.style.display = 'block';
   });
   cy.on('mouseout', 'edge', () => { document.getElementById('tooltip').style.display = 'none'; });
@@ -543,11 +549,475 @@ function renderAlerts(alerts) {
     card.className = 'alert-card';
     card.id = `alert-card-${alert.id}`;
     card.innerHTML = `
-      <span class="alert-ring-badge ${getRingBadgeClass(alert.ring)}">${alert.ring ? alert.ring.split('–')[0].trim() : 'Alert'}</span>
-      <div class="alert-id">${alert.id} · ${alert.txn_id}</div>
+      <span class="alert-ring-badge ${getRingBadgeClass(alert.ring)}">${escapeHtml(alert.ring ? alert.ring.split('–')[0].trim() : 'Alert')}</span>
+      <div class="alert-id">${escapeHtml(alert.id)} · ${escapeHtml(alert.txn_id)}</div>
       <div class="alert-amount">$${parseFloat(alert.amount).toLocaleString('en-US', {minimumFractionDigits:2})}</div>
-      <div class="alert-from-to">📤 ${alert.from_acc} → ${alert.to_acc}</div>
-      <div class="alert-reason">${alert.reason}</div>
+      <div class="alert-from-to">📤 ${escapeHtml(alert.from_acc)} → ${escapeHtml(alert.to_acc)}</div>
+      <div class="alert-reason">${escapeHtml(alert.reason)}</div>
+      <select class="mode-select" id="mode-${alert.id}">
+        <option value="auto">🤖 Auto (LLM if available)</option>
+        <option value="nollm" selected>⚙️ No-LLM (deterministic)</option>
+        <option value="claude">🧠 Claude</option>
+        <option value="gemini">✨ Gemini</option>
+      </select>
+      <button class="btn-investigate" onclick="investigate('${alert.id}')" id="btn-${alert.id}">
+        🔍 Investigate
+      </button>
+    `;
+    card.onclick = (e) => {
+      if (e.target.tagName === 'BUTTON' || e.target.tagName === 'SELECT') return;
+      selectAlert(alert, card);
+    };
+    container.appendChild(card);
+  });
+}
+
+function selectAlert(alert, card) {
+  document.querySelectorAll('.alert-card').forEach(c => c.classList.remove('active'));
+  card.classList.add('active');
+  currentAlert = alert;
+  // Highlight the entry account in graph
+  if (cy && alert.to_acc) {
+    cy.elements().removeClass('highlighted');
+    const node = cy.getElementById(alert.to_acc);
+    if (node.length) { node.addClass('highlighted'); cy.animate({ zoom: 1.5, center: { eles: node } }, { duration: 500 }); }
+  }
+  // Show cypher for this alert
+  updateCypher(alert);
+}
+
+function updateCypher(alert) {
+  const display = document.getElementById('cypherDisplay');
+  if (display) {
+    display.textContent = `// Detect circular flows from flagged entry account
+MATCH (start:Account {id: '${alert.to_acc}'})-[r:SENT*2..6]->(start)
+RETURN [rel IN r | startNode(rel).id] AS cycle_nodes,
+       reduce(total = 0.0, rel IN r | total + rel.amount) AS total_amount
+
+// SQL equivalent requires recursive CTE with cycle guards:
+// WITH RECURSIVE cte AS (
+//   SELECT from_id, to_id, ARRAY[from_id] as path, false as cycle
+//   FROM transactions WHERE from_id = '${alert.to_acc}'
+//   UNION ALL
+//   SELECT t.from_id, t.to_id, cte.path || t.to_id,
+//          t.to_id = ANY(cte.path) as cycle
+//   FROM transactions t JOIN cte ON t.from_id = cte.to_id
+//   WHERE NOT cte.cycle AND cardinality(cte.path) < 6
+// ) SELECT path FROM cte WHERE cycle = true`;
+  }
+}
+
+// ══════════════════════════════════════════════════════════════════════════════
+// Investigation
+// ══════════════════════════════════════════════════════════════════════════════
+
+async function investigate(alertId) {
+  if (isInvestigating) return;
+
+  const mode = document.getElementById(`mode-${alertId}`).value;
+  const btn = document.getElementById(`btn-${alertId}`);
+  const card = document.getElementById(`alert-card-${alertId}`);
+
+  isInvestigating = true;
+  stepCount = 0;
+  visitedNodes.clear();
+
+  btn.disabled = true;
+  btn.textContent = '⏳ Investigating...';
+  card.classList.add('investigating');
+  card.classList.remove('done');
+
+  // Clear steps & switch to steps tab
+  document.getElementById('stepsContainer').innerHTML = '';
+  document.getElementById('reportContainer').innerHTML = '<div class="empty-state"><div class="icon">⏳</div>Waiting for investigation to complete...</div>';
+  switchTab('steps');
+
+  // Show progress bar
+  const progressBar = document.getElementById('progressBar');
+  progressBar.style.display = 'block';
+  updateProgress(0);
+
+  // Reset graph highlights
+  if (cy) cy.elements().removeClass('highlighted visited path-edge cycle-edge');
+
+  try {
+    const res = await fetch(`/api/investigate/${alertId}?mode=${mode}`, { method: 'POST' });
+    const reader = res.body.getReader();
+    const decoder = new TextDecoder();
+    let buffer = '';
+
+    while (true) {
+      const { done, value } = await reader.read();
+      if (done) break;
+      buffer += decoder.decode(value, { stream: true });
+      const lines = buffer.split('\n');
+      buffer = lines.pop(); // keep incomplete line
+
+      for (const line of lines) {
+        if (line.startsWith('data: ')) {
+          try {
+            const payload = JSON.parse(line.slice(6));
+            if (payload.type === 'ping') continue;
+            if (payload.type === 'done') break;
+            handleStep(payload, alertId);
+          } catch (e) { /* ignore parse errors */ }
+        }
+      }
+    }
+
+    card.classList.remove('investigating');
+    card.classList.add('done');
+    btn.textContent = '✅ Done — Investigate Again';
+    btn.disabled = false;
+    updateProgress(100);
+    showNotif('✅ Investigation complete! See Final Report.', 'success');
+
+  } catch (e) {
+    console.error('Investigation error:', e);
+    card.classList.remove('investigating');
+    btn.textContent = '❌ Error — Retry';
+    btn.disabled = false;
+    showNotif('❌ Investigation failed: ' + e.message, 'error');
+  }
+
+  isInvestigating = false;
+}
+
+function handleStep(step, alertId) {
+  const tool = step.tool || step.type || 'unknown';
+  const summary = step.summary || '';
+  const result = step.result || step;
+
+  stepCount++;
+  updateProgress(Math.min(95, (stepCount / TOTAL_STEPS) * 100));
+
+  // Add step card
+  addStepCard(tool, summary, result);
+
+  // Animate graph based on tool
+  animateGraph(tool, result);
+
+  // If it's the final report, render it
+  if (tool === 'report' || (result && result.type === 'report')) {
+    const reportData = result.type === 'report' ? result : result;
+    renderReport(reportData);
+    setTimeout(() => switchTab('report'), 500);
+  }
+}
+
+function addStepCard(tool, summary, result) {
+  const container = document.getElementById('stepsContainer');
+  const isAction = tool === 'take_action';
+  const isReport = tool === 'report';
+  const isStart = tool === 'start';
+
+  const div = document.createElement('div');
+  div.className = 'step-item';
+  const id = `step-${Date.now()}`;
+  div.innerHTML = `
+    <div class="step-header" onclick="toggleStep('${id}')">
+      <span class="step-tool-badge ${isAction ? 'action' : isReport ? 'report' : isStart ? 'start' : ''}">${escapeHtml(tool)}</span>
+      <span class="step-summary">${escapeHtml(summary)}</span>
+      <span class="step-chevron" id="chev-${id}">▼</span>
+    </div>
+    <div class="step-body" id="${id}">
+      <pre>${escapeHtml(JSON.stringify(result, null, 2))}</pre>
+    </div>
+  `;
+  container.appendChild(div);
+  container.scrollTop = container.scrollHeight;
+}
+
+function toggleStep(id) {
+  const body = document.getElementById(id);
+  const chev = document.getElementById(`chev-${id}`);
+  body.classList.toggle('open');
+  chev.classList.toggle('open');
+}
+
+function animateGraph(tool, result) {
+  if (!cy || !result) return;
+
+  if (tool === 'linked_accounts') {
+    const accounts = result.accounts || [];
+    accounts.forEach(a => {
+      if (a.account_id) {
+        const node = cy.getElementById(a.account_id);
+        if (node.length) { node.addClass('visited'); visitedNodes.add(a.account_id); }
+      }
+    });
+    // Also highlight the source
+    const src = result.input && result.input.account_id;
+    if (src) { const n = cy.getElementById(src); if (n.length) n.addClass('highlighted'); }
+
+  } else if (tool === 'trace_path' && result.found) {
+    const path = result.path || [];
+    path.forEach(nid => { const n = cy.getElementById(nid); if (n.length) n.addClass('visited'); });
+    // Highlight path edges
+    for (let i = 0; i < path.length - 1; i++) {
+      cy.edges(`[source="${path[i]}"][target="${path[i+1]}"]`).addClass('path-edge');
+    }
+
+  } else if (tool === 'find_circular_flows') {
+    const cycles = result.cycles || [];
+    cycles.forEach(c => {
+      const nodes = c.cycle_path || [];
+      nodes.forEach(nid => { const n = cy.getElementById(nid); if (n.length) n.addClass('visited'); });
+      for (let i = 0; i < nodes.length - 1; i++) {
+        cy.edges(`[source="${nodes[i]}"][target="${nodes[i+1]}"]`).addClass('cycle-edge');
+      }
+    });
+
+  } else if (tool === 'rank_hubs') {
+    const hubs = result.hubs || [];
+    if (hubs.length > 0) {
+      const topHub = cy.getElementById(hubs[0].account_id);
+      if (topHub.length) topHub.addClass('hub highlighted');
+    }
+
+  } else if (tool === 'find_communities') {
+    const comms = result.communities || [];
+    comms.forEach(c => {
+      if (c.contains_fraud_accounts) {
+        (c.members || []).forEach(mid => {
+          const n = cy.getElementById(mid);
+          if (n.length) n.addClass('visited');
+        });
+      }
+    });
+
+  } else if (tool === 'take_action') {
+    const results = result.results || [];
+    results.forEach(r => {
+      const n = cy.getElementById(r.account_id);
+      if (n.length) {
+        n.removeClass('ring-a ring-b ring-c account highlighted visited');
+        n.addClass('frozen');
+      }
+    });
+  }
+
+  // Fit view to visited nodes
+  if (visitedNodes.size > 0) {
+    const visitedEls = cy.nodes().filter(n => visitedNodes.has(n.id()));
+    if (visitedEls.length > 2) {
+      cy.animate({ fit: { eles: visitedEls, padding: 60 } }, { duration: 600 });
+    }
+  }
+}
+
+// ══════════════════════════════════════════════════════════════════════════════
+// Report rendering
+// ══════════════════════════════════════════════════════════════════════════════
+
+function renderReport(report) {
+  const container = document.getElementById('reportContainer');
+  if (!report || report.type === 'report' && !report.summary) return;
+
+  const r = report;
+  const members = r.ring_members || [];
+  const frozen = (r.actions_taken && r.actions_taken.frozen_accounts) || [];
+  const caseId = (r.actions_taken && r.actions_taken.case_id) || 'N/A';
+  const evidence = r.evidence_paths || [];
+  const circles = r.circular_flows || [];
+  const devices = r.shared_devices || [];
+  const ips = r.shared_ips || [];
+  const pagerank = r.pagerank_top || [];
+
+  container.innerHTML = `
+    <div class="report-section">
+      <h3>📊 Summary</h3>
+      <div class="report-summary">${r.summary || 'Investigation complete.'}</div>
+    </div>
+
+    <div class="report-section">
+      <h3>🔴 Case</h3>
+      <div class="case-badge">📁 ${caseId}</div>
+      <div style="margin-top:8px">
+        <div class="report-stat"><span>Ring Identified</span><span class="report-stat-value">${r.ring_name || 'N/A'}</span></div>
+        <div class="report-stat"><span>Members</span><span class="report-stat-value">${members.length}</span></div>
+        <div class="report-stat"><span>Frozen Accounts</span><span class="report-stat-value" style="color:var(--danger)">${frozen.length}</span></div>
+        <div class="report-stat"><span>Hub Account</span><span class="report-stat-value" style="color:var(--hub)">${r.hub_account || 'N/A'}</span></div>
+      </div>
+    </div>
+
+    ${members.length ? `
+    <div class="report-section">
+      <h3>👥 Ring Members</h3>
+      <div>${members.map(m => `<span class="chip ${m === r.hub_account ? 'chip-hub' : frozen.includes(m) ? 'chip-frozen' : 'chip-member'}">${m}${m === r.hub_account ? ' ⭐' : frozen.includes(m) ? ' ❄' : ''}</span>`).join('')}</div>
+    </div>` : ''}
+
+    ${devices.length || ips.length ? `
+    <div class="report-section">
+      <h3>🔗 Shared Infrastructure</h3>
+      ${devices.map(d => `<span class="chip chip-device">📱 Device: ${d}</span>`).join('')}
+      ${ips.map(i => `<span class="chip chip-ip">🌐 IP: ${i}</span>`).join('')}
+    </div>` : ''}
+
+    ${circles.length ? `
+    <div class="report-section">
+      <h3>🔄 Circular Money Flows</h3>
+      ${circles.map(c => `<div class="evidence-path"><div class="evidence-claim">♻️ Cycle: $${(c.total_amount || 0).toLocaleString()}</div><div class="evidence-path-nodes">${c.path || ''}</div></div>`).join('')}
+    </div>` : ''}
+
+    ${pagerank.length ? `
+    <div class="report-section">
+      <h3>📈 Top Hubs (transfer degree + PageRank)</h3>
+      ${pagerank.map((h,i) => `<div class="report-stat"><span>${i+1}. ${h.account_id}</span><span class="report-stat-value">${h.degree} transfers · PR ${h.pagerank_score}</span></div>`).join('')}
+    </div>` : ''}
+
+    ${evidence.length ? `
+    <div class="report-section">
+      <h3>🔍 Evidence Paths</h3>
+      ${evidence.map(e => `
+        <div class="evidence-path">
+          <div class="evidence-claim">✅ ${e.claim}</div>
+          ${e.path ? `<div class="evidence-path-nodes">🗺 ${e.path}</div>` : ''}
+          ${e.accounts ? `<div class="evidence-path-nodes">Accounts: ${e.accounts.join(', ')}</div>` : ''}
+          <div class="evidence-cypher">${e.cypher || ''}</div>
+        </div>
+      `).join('')}
+    </div>` : ''}
+  `;
+}
+
+// ══════════════════════════════════════════════════════════════════════════════
+// UI utilities
+// ══════════════════════════════════════════════════════════════════════════════
+
+function switchTab(tab) {
+  document.querySelectorAll('.tab-btn').forEach(b => b.classList.remove('active'));
+  document.querySelectorAll('.tab-content').forEach(p => p.classList.remove('active'));
+  document.getElementById(`tab-${tab}`).classList.add('active');
+  document.getElementById(`pane-${tab}`).classList.add('active');
+}
+
+function updateProgress(pct) {
+  document.getElementById('progressFill').style.width = pct + '%';
+}
+
+function toggleSQL() {
+  const panel = document.getElementById('sqlPanel');
+  const arrow = document.getElementById('sqlArrow');
+  panel.classList.toggle('open');
+  arrow.textContent = panel.classList.contains('open') ? '▲' : '▼';
+}
+
+function showNotif(msg, type) {
+  const n = document.createElement('div');
+  n.className = `notif ${type || ''}`;
+  n.textContent = msg;
+  document.body.appendChild(n);
+  setTimeout(() => n.remove(), 4000);
+}
+
+async function resetGraph() {
+  if (!confirm('This will clear all graph data and re-seed. Continue?')) return;
+  const btn = document.getElementById('resetBtn');
+  btn.disabled = true;
+  btn.textContent = '⏳ Resetting...';
+  try {
+    const res = await fetch('/api/reset', { method: 'POST' });
+    const data = await res.json();
+    if (data.status === 'ok') {
+      showNotif('✅ Graph reset! Reloading...', 'success');
+      setTimeout(() => { loadAlerts(); loadGraph(); }, 500);
+    } else {
+      showNotif('❌ Reset failed: ' + (data.detail || 'unknown error'), 'error');
+    }
+  } catch (e) {
+    showNotif('❌ Reset error: ' + e.message, 'error');
+  }
+  btn.disabled = false;
+  btn.textContent = '⚠ Reset Demo';
+}
+
+// ══════════════════════════════════════════════════════════════════════════════
+// Init
+// ══════════════════════════════════════════════════════════════════════════════
+
+async function init() {
+  await loadAlerts();
+  await loadGraph();
+}
+
+init();
+</script>
+</body>
+</html>
+ + escapeHtml(d.amount) : ''}${d.txnId ? '<br>' + escapeHtml(d.txnId) : ''}${d.flagged ? '<br>🚩 FLAGGED' : ''}`;
+    t.style.display = 'block';
+  });
+  cy.on('mouseout', 'edge', () => { document.getElementById('tooltip').style.display = 'none'; });
+
+  if (infrastructureHidden) cy.edges().filter(edge => edge.data('type') !== 'SENT').addClass('infra-hidden');
+  const searchInput = document.getElementById('graphSearch');
+  if (searchInput && searchInput.value) searchGraph(searchInput.value);
+  fitGraph();
+}
+
+// ══════════════════════════════════════════════════════════════════════════════
+// Load data
+// ══════════════════════════════════════════════════════════════════════════════
+
+async function loadAlerts() {
+  try {
+    const res = await fetch('/api/alerts');
+    const data = await res.json();
+    renderAlerts(data.alerts || []);
+    updateOverview((data.alerts || []).length);
+    document.getElementById('connectionStatus').textContent = 'Graph connected';
+  } catch (e) {
+    console.error('Failed to load alerts:', e);
+    document.getElementById('connectionStatus').textContent = 'API unavailable';
+    document.getElementById('connectionStatus').previousElementSibling.style.background = 'var(--danger)';
+    document.getElementById('alertList').innerHTML = '<div class="empty-state"><div class="icon">⚠️</div>Failed to load alerts. Is the server running?</div>';
+  }
+}
+
+async function loadGraph() {
+  try {
+    const res = await fetch('/api/graph');
+    const data = await res.json();
+    const nodes = data.nodes || [];
+    const edges = data.edges || [];
+    graphMetrics = {
+      accounts: nodes.filter(n => n.label === 'Account').length,
+      transfers: edges.filter(e => e.type === 'SENT').length,
+      frozen: nodes.filter(n => n.label === 'Account' && n.frozen).length
+    };
+    updateOverview();
+    initCy(nodes, edges);
+  } catch (e) {
+    console.error('Failed to load graph:', e);
+    document.getElementById('connectionStatus').textContent = 'Graph unavailable';
+  }
+}
+
+function getRingBadgeClass(ring) {
+  if (ring && ring.includes('Ring A')) return 'ring-a-badge';
+  if (ring && ring.includes('Ring B')) return 'ring-b-badge';
+  if (ring && ring.includes('Ring C')) return 'ring-c-badge';
+  return 'ring-a-badge';
+}
+
+function renderAlerts(alerts) {
+  const container = document.getElementById('alertList');
+  if (!alerts.length) {
+    container.innerHTML = '<div class="empty-state"><div class="icon">✅</div>No open alerts</div>';
+    return;
+  }
+  container.innerHTML = '';
+  alerts.forEach(alert => {
+    const card = document.createElement('div');
+    card.className = 'alert-card';
+    card.id = `alert-card-${alert.id}`;
+    card.innerHTML = `
+      <span class="alert-ring-badge ${getRingBadgeClass(alert.ring)}">${escapeHtml(alert.ring ? alert.ring.split('–')[0].trim() : 'Alert')}</span>
+      <div class="alert-id">${escapeHtml(alert.id)} · ${escapeHtml(alert.txn_id)}</div>
+      <div class="alert-amount">$${parseFloat(alert.amount).toLocaleString('en-US', {minimumFractionDigits:2})}</div>
+      <div class="alert-from-to">📤 ${escapeHtml(alert.from_acc)} → ${escapeHtml(alert.to_acc)}</div>
+      <div class="alert-reason">${escapeHtml(alert.reason)}</div>
       <select class="mode-select" id="mode-${alert.id}">
         <option value="auto">🤖 Auto (LLM if available)</option>
         <option value="nollm" selected>⚙️ No-LLM (deterministic)</option>
